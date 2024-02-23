@@ -21,7 +21,7 @@ LST_sheets <- c("Equip", "Doc", "Item", "WOPM", "WOCOR", "ActivityPM", "Activity
 ### Import Each Sheet
 #### Loop through sheets and import one dataframe for each, named after the sheet
 for (i_sheet in LST_sheets) {
-  DF_Import <- read_excel(paste("C:/Users/rapelak/R Projects/Dept QuickAsses/QuickAssess BO Output",VAR_dept," ",VAR_range,".xlsx", sep = ""), sheet = i_sheet)
+  DF_Import <- read_excel(paste("C:/Users/rapelak/R Projects/Dept QuickAsses/QuickAssess BO Output ",VAR_dept," ",VAR_range,".xlsx", sep = ""), sheet = i_sheet)
   assign(paste("DF_",i_sheet,sep=''),data.frame(DF_Import))
   rm(DF_Import)
 }
