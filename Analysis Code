@@ -11,26 +11,40 @@ if (any(installed_packages == FALSE)) {
 invisible(lapply(LST_packages, library, character.only = TRUE))
 
 
+## Set user-defined variables
+### Set parameters to specify filename
+VAR_set = "FD"
+VAR_range = "2019-2023"
+### Set this to TRUE if you want to save output to folder
+FLAG_save = FALSE
+
+
 ## Import Data from BO QuickAccess report for FD
 ### dept, range, and sheets are from the standardized filename and sheet format of the Excel file that contains the BO output of QuickAccess report
-### Set parameters to specify filename
-VAR_dept = "FD"
-VAR_range = "2019-2023"
 ### Set string to contain sheet names to loop through
 LST_sheets <- c("Equip", "Doc", "Item", "WOPM", "WOCOR", "ActivityPM", "ActivityCOR", "CommentPM", "CommentCOR")
 ### Import Each Sheet
 #### Loop through sheets and import one dataframe for each, named after the sheet
 for (i_sheet in LST_sheets) {
-  DF_Import <- read_excel(paste("C:/Users/rapelak/R Projects/Dept QuickAsses/QuickAssess BO Output ",VAR_dept," ",VAR_range,".xlsx", sep = ""), sheet = i_sheet)
+  DF_Import <- read_excel(paste("C:/Users/rapelak/R Projects/Dept QuickAsses/QuickAssess BO Output ",VAR_set," ",VAR_range,".xlsx", sep = ""), sheet = i_sheet)
   assign(paste("DF_",i_sheet,sep=''),data.frame(DF_Import))
   rm(DF_Import)
 }
 rm(i_sheet)
 
 
+## Output Prep
+### Create a directory for the output plots
+if (FLAG_save) {
+  VAR_OutputPath = paste("C:/Users/rapelak/R Projects/Dept QuickAsses/Output Plots ",VAR_set, " ",VAR_range, sep="")
+  if (!dir.exists(VAR_OutputPath)){
+    dir.create(VAR_OutputPath)
+  }
+}
+
 ## Cleanup
 
-#### Stictch COR & PM versions of WO, Activity, Comment together
+#### Stitch COR & PM versions of WO, Activity, Comment together
 DF_WO <- rbind(DF_WOPM, DF_WOCOR)
 DF_Activity <- rbind(DF_ActivityPM, DF_ActivityCOR)
 DF_Comment <- rbind(DF_CommentPM, DF_CommentCOR)
@@ -42,6 +56,7 @@ DF_Equip$Reliability.Ranking[is.na(DF_Equip$Reliability.Ranking)] <- "BLANK"
 DF_WO$Impact[is.na(DF_WO$Impact)] <- "BLANK"
 DF_WO$WO.Sub.type[is.na(DF_WO$WO.Sub.type)] <- "BLANK"
 DF_WO$Task[is.na(DF_WO$Task)] <- "BLANK"  
+DF_WO$Hours.Worked[is.na(DF_WO$Hours.Worked)] <- 0  
 #### If Reported date is blank, fill it with created date
 DF_WO$Reported.Date[is.na(DF_WO$Reported.Date)] <- DF_WO$Created.Date.Time
 #### Adjust date format
@@ -81,8 +96,9 @@ VAR_popItem <- (VAR_equipCount - length(setdiff(DF_Equip$Object, DF_Item$Object)
 VAR_popImpact <- (sum(DF_WO$WO.Type=="COR") - sum(DF_WO$WO.Type=="COR" & is.na(DF_WO$Impact))) / sum(DF_WO$WO.Type=="COR")
 #### Non-blank / non-zero Downtime Hours on WO with Impact of SHUTDOWN or REDUCTN
 VAR_popDowntime <- sum((DF_WO$Impact=="SHUTDOWN" | DF_WO$Impact=="REDUCTN") & (!is.na(DF_WO$DowntimeHours) & DF_WO$DowntimeHours!=0)) / sum(DF_WO$Impact=="SHUTDOWN" | DF_WO$Impact=="REDUCTN")
-#### COR WOs with Failure, Cause, & Action all filled in
-VAR_popFailcodes <- sum(  DF_WO$WO.Type=="COR") / sum(DF_WO$WO.Type=="COR" & (!is.na(DF_WO$Failure.Mode) | !is.na(DF_WO$Failure.Mode) | !is.na(DF_WO$Failure.Mode)))
+#### FAIL WOs (COR or MOD with IMPACT != NOFAIL) with Failure, Cause, & Action all filled in
+VAR_FAILCount <- sum ((DF_WO$WO.Type=="COR" | DF_WO$WO.Type=="MOD") & DF_WO$Impact != "NOFAIL")
+VAR_popFailcodes <- sum ((DF_WO$WO.Type=="COR" | DF_WO$WO.Type=="MOD") & DF_WO$Impact != "NOFAIL" & (!is.na(DF_WO$Failure.Mode))) / VAR_FAILCount 
 #### Task Use
 VAR_CORTask <- sum((DF_WO$WO.Type=="COR" | DF_WO$WO.Type=="MOD") & !DF_WO$Task=="BLANK") / sum(DF_WO$WO.Type=="COR" | DF_WO$WO.Type=="MOD")
 VAR_PMTask <- sum((DF_WO$WO.Type=="PM" | DF_WO$WO.Type=="CAL") & !DF_WO$Task=="BLANK") / sum(DF_WO$WO.Type=="PM" | DF_WO$WO.Type=="CAL")
@@ -99,9 +115,9 @@ DF_WO.Compliance <- data.frame(LST_Names, LST_Metrics, LST_Order)
 rm(LST_Names, LST_Metrics, LST_Order)
 ### Chart equipment metrics
 PLOT_EQComp <- ggplot(data=DF_Equip.Compliance, aes(x=reorder(LST_Names,-LST_Order), y=LST_Metrics)) +
-  geom_bar(stat="identity", fill="darkslategray") +
+  geom_bar(stat="identity", fill="chartreuse4") +
   coord_flip() +
-  scale_fill_manual(name="Year Range", values=c('chartreuse4', 'darkslategray')) +
+  scale_fill_manual(name="Year Range", values=c('darkblue', 'chartreuse4')) +
   scale_y_continuous(limits = c(0, 1), expand = c(0,0)) +
   geom_text(aes(label=scales::percent(LST_Metrics, accuracy = 1)), hjust=1.5, color='white') +
   labs(title="Equipment Compliance") +
@@ -113,11 +129,12 @@ PLOT_EQComp <- ggplot(data=DF_Equip.Compliance, aes(x=reorder(LST_Names,-LST_Ord
   theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 PLOT_EQComp
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQComp.png",sep=""))}
 ### Chart work order metrics
 PLOT_WOComp <- ggplot(data=DF_WO.Compliance, aes(x=reorder(LST_Names,-LST_Order), y=LST_Metrics)) +
-  geom_bar(stat="identity", fill="darkslategray") +
+  geom_bar(stat="identity", fill="chartreuse4") +
   coord_flip() +
-  scale_fill_manual(name="Year Range", values=c('chartreuse4', 'darkslategray')) +
+  scale_fill_manual(name="Year Range", values=c('darkblue', 'chartreuse4')) +
   scale_y_continuous(limits = c(0, 1), expand = c(0,0)) +
   geom_text(aes(label=scales::percent(LST_Metrics, accuracy = 1)), hjust=1.5, color='white') +
   labs(title="Work Order Compliance") +
@@ -129,7 +146,7 @@ PLOT_WOComp <- ggplot(data=DF_WO.Compliance, aes(x=reorder(LST_Names,-LST_Order)
   theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 PLOT_WOComp
-
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/WOComp.png",sep=""))}
 
 ## Equipment - Classification
 
@@ -151,7 +168,7 @@ rm(DF_temp)
 DF_Plot = DF_ClassCat[order(DF_ClassCat$Count, decreasing=TRUE),]
 ##### plot
 PLOT_IDCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-Count), y=Count)) +
-  geom_bar(stat="identity", fill="darkslategray") +
+  geom_bar(stat="identity", fill="chartreuse4") +
   scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
   labs(title="Count of EAMS ID by Class-Category") +
   xlab("Class-Category") +
@@ -162,6 +179,7 @@ PLOT_IDCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-Count
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_IDCount
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/IDCount.png",sep=""))}
 
 
 ## Equipment - Reliability Rank
@@ -177,7 +195,7 @@ for (iRank in LST_ranks) {
 }
 #### Plot EAMS ID Counts
 PLOT_RRCount <- ggplot(data=DF_ReliRank, aes(x=reorder(Reliability.Ranking, -Value), y=Count)) +
-  geom_bar(stat="identity", fill=ifelse(DF_ReliRank$Reliability.Ranking=="BLANK","firebrick4","darkslategray")) +
+  geom_bar(stat="identity", fill=ifelse(DF_ReliRank$Reliability.Ranking=="BLANK","firebrick4","chartreuse4")) +
   scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
   labs(title="Count of EAMS ID by Reliability Rank") +
   xlab("Reliability Rank") +
@@ -187,6 +205,7 @@ PLOT_RRCount <- ggplot(data=DF_ReliRank, aes(x=reorder(Reliability.Ranking, -Val
   theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 PLOT_RRCount
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/RRCount.png",sep=""))}
 
 ### Chart average reliability rank by class-category
 #### Add a RRankScore column to the Equipment DF
@@ -201,7 +220,7 @@ DF_ClassCat$AvgRRank <- DF_temp$avg[match(DF_ClassCat$ClassCategory, DF_temp$Cla
 DF_Plot = DF_ClassCat[order(DF_ClassCat$AvgRRank, decreasing=TRUE),]
 ##### plot
 PLOT_RRankAvg <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-AvgRRank), y=AvgRRank)) +
-  geom_bar(stat="identity", fill="darkslategray") +
+  geom_bar(stat="identity", fill="chartreuse4") +
   scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
   labs(title="Average Reliability Rank by Class-Category") +
   xlab("Class-Category") +
@@ -212,6 +231,7 @@ PLOT_RRankAvg <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-AvgR
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_RRankAvg
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/RRankAvg.png",sep=""))}
 
 
 ## Equipment - Age
@@ -229,7 +249,7 @@ DF_ClassCat$AvgAge <- DF_temp$avg[match(DF_ClassCat$ClassCategory, DF_temp$Class
 DF_Plot = DF_ClassCat[order(DF_ClassCat$AvgAge, decreasing=TRUE),]
 ##### plot
 PLOT_AgeAvg <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-AvgAge), y=AvgAge)) +
-  geom_bar(stat="identity", fill="darkslategray") +
+  geom_bar(stat="identity", fill="chartreuse4") +
   scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
   labs(title="Average Age by Class-Category") +
   xlab("Class-Category") +
@@ -240,6 +260,7 @@ PLOT_AgeAvg <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-AvgAge
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_AgeAvg
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/AgeAvg.png",sep=""))}
 
 
 ## Work Order Preparation
@@ -255,49 +276,71 @@ colnames(DF_Year)[1] <- "Year"
 #### All WOs 
 DF_temp <- DF_WO %>%
   group_by(Complete.Year) %>%
-  summarise(n = n())
+  summarise(n = n(), hrs=sum(Hours.Worked), cost=sum(Total.Cost))
 DF_Year$WO.Count <- DF_temp$n[match(DF_Year$Year, DF_temp$Complete.Year)]
+DF_Year$WO.Hours <- DF_temp$hrs[match(DF_Year$Year, DF_temp$Complete.Year)]
+DF_Year$WO.Cost <- DF_temp$cost[match(DF_Year$Year, DF_temp$Complete.Year)]
 rm(DF_temp)
 #### COR WOs
 DF_temp <- DF_WO[DF_WO$WO.Type=="COR",] %>%
   group_by(Complete.Year) %>%
-  summarise(n = n())
+  summarise(n = n(), hrs=sum(Hours.Worked), cost=sum(Total.Cost))
 DF_Year$COR.Count <- DF_temp$n[match(DF_Year$Year, DF_temp$Complete.Year)]
+DF_Year$COR.Hours <- DF_temp$hrs[match(DF_Year$Year, DF_temp$Complete.Year)]
+DF_Year$COR.Cost <- DF_temp$cost[match(DF_Year$Year, DF_temp$Complete.Year)]
 #### PM WOs
 DF_temp <- DF_WO[DF_WO$WO.Type=="PM",] %>%
   group_by(Complete.Year) %>%
-  summarise(n = n())
+  summarise(n = n(), hrs=sum(Hours.Worked), cost=sum(Total.Cost))
 DF_Year$PM.Count <- DF_temp$n[match(DF_Year$Year, DF_temp$Complete.Year)]
+DF_Year$PM.Hours <- DF_temp$hrs[match(DF_Year$Year, DF_temp$Complete.Year)]
+DF_Year$PM.Cost <- DF_temp$cost[match(DF_Year$Year, DF_temp$Complete.Year)]
 #### CAL WOs
 DF_temp <- DF_WO[DF_WO$WO.Type=="CAL",] %>%
   group_by(Complete.Year) %>%
-  summarise(n = n())
+  summarise(n = n(), hrs=sum(Hours.Worked), cost=sum(Total.Cost))
 DF_Year$CAL.Count <- DF_temp$n[match(DF_Year$Year, DF_temp$Complete.Year)]
+DF_Year$CAL.Hours <- DF_temp$hrs[match(DF_Year$Year, DF_temp$Complete.Year)]
+DF_Year$CAL.Cost <- DF_temp$cost[match(DF_Year$Year, DF_temp$Complete.Year)]
 #### MOD WOs
 DF_temp <- DF_WO[DF_WO$WO.Type=="MOD",] %>%
   group_by(Complete.Year) %>%
-  summarise(n = n())
+  summarise(n = n(), hrs=sum(Hours.Worked), cost=sum(Total.Cost))
 DF_Year$MOD.Count <- DF_temp$n[match(DF_Year$Year, DF_temp$Complete.Year)]
+DF_Year$MOD.Hours <- DF_temp$hrs[match(DF_Year$Year, DF_temp$Complete.Year)]
+DF_Year$MOD.Cost <- DF_temp$cost[match(DF_Year$Year, DF_temp$Complete.Year)]
+#### FAIL WOs
+DF_temp <- DF_WO[(DF_WO$WO.Type=="COR" | DF_WO$WO.Type=="MOD") & (DF_WO$Impact!="NOFAIL"),] %>%
+  group_by(Complete.Year) %>%
+  summarise(n = n(), hrs=sum(Hours.Worked), cost=sum(Total.Cost))
+DF_Year$FAIL.Count <- DF_temp$n[match(DF_Year$Year, DF_temp$Complete.Year)]
+DF_Year$FAIL.Hours <- DF_temp$hrs[match(DF_Year$Year, DF_temp$Complete.Year)]
+DF_Year$FAIL.Cost <- DF_temp$cost[match(DF_Year$Year, DF_temp$Complete.Year)]
 #### Urgent COR WOs
-DF_temp <- DF_WO[DF_WO$WO.Type=="COR" & DF_WO$Priority<=2,] %>%
+DF_temp <- DF_WO[(DF_WO$WO.Type=="COR" | DF_WO$WO.Type=="MOD") & (DF_WO$Impact!="NOFAIL") & DF_WO$Priority<=2,] %>%
   group_by(Complete.Year) %>%
-  summarise(n = n())
+  summarise(n = n(), hrs=sum(Hours.Worked), cost=sum(Total.Cost))
 DF_Year$Urgent.Count <- DF_temp$n[match(DF_Year$Year, DF_temp$Complete.Year)]
+DF_Year$Urgent.Hours <- DF_temp$hrs[match(DF_Year$Year, DF_temp$Complete.Year)]
+DF_Year$Urgent.Cost <- DF_temp$cost[match(DF_Year$Year, DF_temp$Complete.Year)]
 #### Serious COR WOs
-DF_temp <- DF_WO[DF_WO$WO.Type=="COR" & DF_WO$Priority<=2 & (DF_WO$Impact=="SHUTDOWN" | DF_WO$Impact == "REDUCTN"),] %>%
+DF_temp <- DF_WO[(DF_WO$WO.Type=="COR" | DF_WO$WO.Type=="MOD") & (DF_WO$Impact=="SHUTDOWN" | DF_WO$Impact == "REDUCTN"),] %>%
   group_by(Complete.Year) %>%
-  summarise(n = n())
+  summarise(n = n(), hrs=sum(Hours.Worked), cost=sum(Total.Cost))
 DF_Year$Serious.Count <- DF_temp$n[match(DF_Year$Year, DF_temp$Complete.Year)]
+DF_Year$Serious.Hours <- DF_temp$hrs[match(DF_Year$Year, DF_temp$Complete.Year)]
+DF_Year$Serious.Cost <- DF_temp$cost[match(DF_Year$Year, DF_temp$Complete.Year)]
 #### Those are all absolute counts of WOs - add a WO rate (count/#equip)
 DF_Year <- transform(DF_Year, WO.Rate = (round(WO.Count/nrow(DF_Equip),3)))
 DF_Year <- transform(DF_Year, COR.Rate = (round(COR.Count/nrow(DF_Equip),3)))
 DF_Year <- transform(DF_Year, PM.Rate = (round(PM.Count/nrow(DF_Equip),3)))
 DF_Year <- transform(DF_Year, CAL.Rate = (round(CAL.Count/nrow(DF_Equip),3)))
 DF_Year <- transform(DF_Year, MOD.Rate = (round(MOD.Count/nrow(DF_Equip),3)))
+DF_Year <- transform(DF_Year, FAIL.Rate = (round(FAIL.Count/nrow(DF_Equip),3)))
 DF_Year <- transform(DF_Year, Urgent.Rate = (round(Urgent.Count/nrow(DF_Equip),3)))
 DF_Year <- transform(DF_Year, Serious.Rate = (round(Serious.Count/nrow(DF_Equip),3)))
 
-#### Add WO counts Equip DF
+#### Add WO counts to Equip DF
 #### Collect the counts, hours, and costs in a temp dataframe
 DF_temp <- DF_WO %>%
   group_by(Object.Code) %>%
@@ -325,9 +368,9 @@ DF_Equip$COR.Count[is.na(DF_Equip$COR.Count)] <- 0
 DF_Equip$COR.Hours[is.na(DF_Equip$COR.Hours)] <- 0
 DF_Equip$COR.Cost[is.na(DF_Equip$COR.Cost)] <- 0
 rm(DF_temp)
-#### Add Urgent COR WO versions to Equip DF
+#### Add Urgent WO versions to Equip DF
 #### Collect the counts in a temp dataframe
-DF_temp <- DF_WO[DF_WO$WO.Type=="COR" & DF_WO$Priority<=2 , ] %>%
+DF_temp <- DF_WO[(DF_WO$WO.Type=="COR" | DF_WO$WO.Type=="MOD") & (DF_WO$Impact!="NOFAIL") & DF_WO$Priority<=2,] %>%
   group_by(Object.Code) %>%
   summarise(n = n(), hrs = sum(Hours.Worked), cost = sum(Total.Cost))
 #### Transfer counts to DF_Equip
@@ -339,9 +382,9 @@ DF_Equip$Urgent.Count[is.na(DF_Equip$Urgent.Count)] <- 0
 DF_Equip$Urgent.Hours[is.na(DF_Equip$Urgent.Hours)] <- 0
 DF_Equip$Urgent.Cost[is.na(DF_Equip$Urgent.Cost)] <- 0
 rm(DF_temp)
-#### Add Serious COR WO versions to Equip DF
+#### Add Serious WO versions to Equip DF
 #### Collect the counts in a temp dataframe
-DF_temp <- DF_WO[DF_WO$WO.Type=="COR" & DF_WO$Priority<=2 & (DF_WO$Impact=="SHUTDOWN" | DF_WO$Impact == "REDUCTN"), ] %>%
+DF_temp <- DF_WO[(DF_WO$WO.Type=="COR" | DF_WO$WO.Type=="MOD") & (DF_WO$Impact=="SHUTDOWN" | DF_WO$Impact == "REDUCTN"),] %>%
   group_by(Object.Code) %>%
   summarise(n = n(), hrs = sum(Hours.Worked), cost = sum(Total.Cost))
 #### Transfer counts to DF_Equip
@@ -352,6 +395,20 @@ DF_Equip$Serious.Cost <- DF_temp$cost[match(DF_Equip$Object, DF_temp$Object.Code
 DF_Equip$Serious.Count[is.na(DF_Equip$Serious.Count)] <- 0
 DF_Equip$Serious.Hours[is.na(DF_Equip$Serious.Hours)] <- 0
 DF_Equip$Serious.Cost[is.na(DF_Equip$Serious.Cost)] <- 0
+rm(DF_temp)
+#### Add MOD WO versions to Equip DF
+#### Collect the counts in a temp dataframe
+DF_temp <- DF_WO[DF_WO$WO.Type=="MOD", ] %>%
+  group_by(Object.Code) %>%
+  summarise(n = n(), hrs = sum(Hours.Worked), cost = sum(Total.Cost))
+#### Transfer counts to DF_Equip
+DF_Equip$MOD.Count <- DF_temp$n[match(DF_Equip$Object, DF_temp$Object.Code)]
+DF_Equip$MOD.Hours <- DF_temp$hrs[match(DF_Equip$Object, DF_temp$Object.Code)]
+DF_Equip$MOD.Cost <- DF_temp$cost[match(DF_Equip$Object, DF_temp$Object.Code)]
+#### Replace NA with 0
+DF_Equip$MOD.Count[is.na(DF_Equip$MOD.Count)] <- 0
+DF_Equip$MOD.Hours[is.na(DF_Equip$MOD.Hours)] <- 0
+DF_Equip$MOD.Cost[is.na(DF_Equip$MOD.Cost)] <- 0
 rm(DF_temp)
 #### Add PM WO versions to Equip DF
 #### Collect the counts in a temp dataframe
@@ -381,8 +438,23 @@ DF_Equip$CAL.Count[is.na(DF_Equip$CAL.Count)] <- 0
 DF_Equip$CAL.Hours[is.na(DF_Equip$CAL.Hours)] <- 0
 DF_Equip$CAL.Cost[is.na(DF_Equip$CAL.Cost)] <- 0
 rm(DF_temp)
-#### Add COR Downtime totals to Equip DF
-DF_temp <- DF_WO[DF_WO$WO.Type=="COR", ] %>%
+#### Add FAIL WO versions to Equip DF
+#### Collect the counts in a temp dataframe
+DF_temp <- DF_WO[(DF_WO$WO.Type=="COR" | DF_WO$WO.Type=="MOD") & (DF_WO$Impact!="NOFAIL"),] %>%
+  group_by(Object.Code) %>%
+  summarise(n = n(), hrs = sum(Hours.Worked), cost = sum(Total.Cost))
+#### Transfer counts to DF_Equip
+DF_Equip$FAIL.Count <- DF_temp$n[match(DF_Equip$Object, DF_temp$Object.Code)]
+DF_Equip$FAIL.Hours <- DF_temp$hrs[match(DF_Equip$Object, DF_temp$Object.Code)]
+DF_Equip$FAIL.Cost <- DF_temp$cost[match(DF_Equip$Object, DF_temp$Object.Code)]
+#### Replace NA with 0
+DF_Equip$FAIL.Count[is.na(DF_Equip$FAIL.Count)] <- 0
+DF_Equip$FAIL.Hours[is.na(DF_Equip$FAIL.Hours)] <- 0
+DF_Equip$FAIL.Cost[is.na(DF_Equip$FAIL.Cost)] <- 0
+rm(DF_temp)
+
+#### Add FAIL Downtime totals to Equip DF
+DF_temp <- DF_WO[(DF_WO$WO.Type=="COR" | DF_WO$WO.Type=="MOD") & (DF_WO$Impact!="NOFAIL"),] %>%
   group_by(Object.Code) %>%
   summarise(dt = sum(DowntimeHours))
 #### Transfer counts to DF_Equip
@@ -395,62 +467,75 @@ rm(DF_temp)
 #### Collect the counts in a temp dataframe (all, COR, and PM all at once)
 DF_temp <- DF_Equip %>%
   group_by(ClassCategory) %>%
-  summarise(sumWO = sum(WO.Count), sumCOR = sum(COR.Count), sumPM = sum(PM.Count), sumUrgent = sum(Urgent.Count), sumSerious = sum(Serious.Count), sumCAL = sum(CAL.Count))
+  summarise(sumWO = sum(WO.Count), sumCOR = sum(COR.Count), sumPM = sum(PM.Count), sumUrgent = sum(Urgent.Count), sumSerious = sum(Serious.Count), sumCAL = sum(CAL.Count), sumMOD = sum(MOD.Count), sumFAIL = sum(FAIL.Count))
 #### Transfer counts to DF_ClassCat
 DF_ClassCat$WO.Count <- DF_temp$sumWO[match(DF_ClassCat$ClassCategory, DF_temp$ClassCategory)]
 DF_ClassCat$COR.Count <- DF_temp$sumCOR[match(DF_ClassCat$ClassCategory, DF_temp$ClassCategory)]
+DF_ClassCat$MOD.Count <- DF_temp$sumMOD[match(DF_ClassCat$ClassCategory, DF_temp$ClassCategory)]
 DF_ClassCat$PM.Count <- DF_temp$sumPM[match(DF_ClassCat$ClassCategory, DF_temp$ClassCategory)]
+DF_ClassCat$CAL.Count <- DF_temp$sumCAL[match(DF_ClassCat$ClassCategory, DF_temp$ClassCategory)]
+DF_ClassCat$FAIL.Count <- DF_temp$sumFAIL[match(DF_ClassCat$ClassCategory, DF_temp$ClassCategory)]
 DF_ClassCat$Urgent.Count <- DF_temp$sumUrgent[match(DF_ClassCat$ClassCategory, DF_temp$ClassCategory)]
 DF_ClassCat$Serious.Count <- DF_temp$sumSerious[match(DF_ClassCat$ClassCategory, DF_temp$ClassCategory)]
-DF_ClassCat$CAL.Count <- DF_temp$sumCAL[match(DF_ClassCat$ClassCategory, DF_temp$ClassCategory)]
 #### Replace NA with 0
 DF_ClassCat$WO.Count[is.na(DF_ClassCat$WO.Count)] <- 0
 DF_ClassCat$COR.Count[is.na(DF_ClassCat$COR.Count)] <- 0
+DF_ClassCat$MOD.Count[is.na(DF_ClassCat$CAL.Count)] <- 0
 DF_ClassCat$PM.Count[is.na(DF_ClassCat$PM.Count)] <- 0
+DF_ClassCat$CAL.Count[is.na(DF_ClassCat$CAL.Count)] <- 0
+DF_ClassCat$FAIL.Count[is.na(DF_ClassCat$FAIL.Count)] <- 0
 DF_ClassCat$Urgent.Count[is.na(DF_ClassCat$Urgent.Count)] <- 0
 DF_ClassCat$Serious.Count[is.na(DF_ClassCat$Serious.Count)] <- 0
-DF_ClassCat$CAL.Count[is.na(DF_ClassCat$CAL.Count)] <- 0
 rm(DF_temp)
 #### Add WO hours totals ClassCat DF
 #### Collect the hours in a temp dataframe (all, COR, and PM all at once)
 DF_temp <- DF_Equip %>%
   group_by(ClassCategory) %>%
-  summarise(sumWO = sum(WO.Hours), sumCOR = sum(COR.Hours), sumPM = sum(PM.Hours), sumUrgent = sum(Urgent.Hours), sumSerious = sum(Serious.Hours), sumCAL = sum(CAL.Hours))
+  summarise(sumWO = sum(WO.Hours), sumCOR = sum(COR.Hours), sumPM = sum(PM.Hours), sumUrgent = sum(Urgent.Hours), sumSerious = sum(Serious.Hours), sumCAL = sum(CAL.Hours), sumMOD = sum(MOD.Hours), sumFAIL = sum(FAIL.Hours))
 #### Transfer counts to DF_ClassCat
 DF_ClassCat$WO.Hours <- DF_temp$sumWO[match(DF_ClassCat$ClassCategory, DF_temp$ClassCategory)]
 DF_ClassCat$COR.Hours <- DF_temp$sumCOR[match(DF_ClassCat$ClassCategory, DF_temp$ClassCategory)]
+DF_ClassCat$MOD.Hours <- DF_temp$sumMOD[match(DF_ClassCat$ClassCategory, DF_temp$ClassCategory)]
 DF_ClassCat$PM.Hours <- DF_temp$sumPM[match(DF_ClassCat$ClassCategory, DF_temp$ClassCategory)]
+DF_ClassCat$CAL.Hours <- DF_temp$sumCAL[match(DF_ClassCat$ClassCategory, DF_temp$ClassCategory)]
+DF_ClassCat$FAIL.Hours <- DF_temp$sumFAIL[match(DF_ClassCat$ClassCategory, DF_temp$ClassCategory)]
 DF_ClassCat$Urgent.Hours <- DF_temp$sumUrgent[match(DF_ClassCat$ClassCategory, DF_temp$ClassCategory)]
 DF_ClassCat$Serious.Hours <- DF_temp$sumSerious[match(DF_ClassCat$ClassCategory, DF_temp$ClassCategory)]
-DF_ClassCat$CAL.Hours <- DF_temp$sumCAL[match(DF_ClassCat$ClassCategory, DF_temp$ClassCategory)]
 #### Replace NA with 0
 DF_ClassCat$WO.Hours[is.na(DF_ClassCat$WO.Hours)] <- 0
 DF_ClassCat$COR.Hours[is.na(DF_ClassCat$COR.Hours)] <- 0
+DF_ClassCat$MOD.Hours[is.na(DF_ClassCat$MOD.Hours)] <- 0
 DF_ClassCat$PM.Hours[is.na(DF_ClassCat$PM.Hours)] <- 0
+DF_ClassCat$CAL.Hours[is.na(DF_ClassCat$CAL.Hours)] <- 0
+DF_ClassCat$FAIL.Hours[is.na(DF_ClassCat$FAIL.Hours)] <- 0
 DF_ClassCat$Urgent.Hours[is.na(DF_ClassCat$Urgent.Hours)] <- 0
 DF_ClassCat$Serious.Hours[is.na(DF_ClassCat$Serious.Hours)] <- 0
-DF_ClassCat$CAL.Hours[is.na(DF_ClassCat$CAL.Hours)] <- 0
 rm(DF_temp)
 #### Add WO costs totals ClassCat DF
 #### Collect the costs in a temp dataframe (all, COR, and PM all at once)
 DF_temp <- DF_Equip %>%
   group_by(ClassCategory) %>%
-  summarise(sumWO = sum(WO.Cost), sumCOR = sum(COR.Cost), sumPM = sum(PM.Cost), sumUrgent = sum(Urgent.Cost), sumSerious = sum(Serious.Cost), sumCAL = sum(CAL.Cost))
+  summarise(sumWO = sum(WO.Cost), sumCOR = sum(COR.Cost), sumPM = sum(PM.Cost), sumUrgent = sum(Urgent.Cost), sumSerious = sum(Serious.Cost), sumCAL = sum(CAL.Cost), sumMOD = sum(MOD.Cost), sumFAIL = sum(FAIL.Cost))
 #### Transfer counts to DF_ClassCat
 DF_ClassCat$WO.Cost <- DF_temp$sumWO[match(DF_ClassCat$ClassCategory, DF_temp$ClassCategory)]
 DF_ClassCat$COR.Cost <- DF_temp$sumCOR[match(DF_ClassCat$ClassCategory, DF_temp$ClassCategory)]
+DF_ClassCat$MOD.Cost <- DF_temp$sumMOD[match(DF_ClassCat$ClassCategory, DF_temp$ClassCategory)]
 DF_ClassCat$PM.Cost <- DF_temp$sumPM[match(DF_ClassCat$ClassCategory, DF_temp$ClassCategory)]
+DF_ClassCat$CAL.Cost <- DF_temp$sumCAL[match(DF_ClassCat$ClassCategory, DF_temp$ClassCategory)]
+DF_ClassCat$FAIL.Cost <- DF_temp$sumFAIL[match(DF_ClassCat$ClassCategory, DF_temp$ClassCategory)]
 DF_ClassCat$Urgent.Cost <- DF_temp$sumUrgent[match(DF_ClassCat$ClassCategory, DF_temp$ClassCategory)]
 DF_ClassCat$Serious.Cost <- DF_temp$sumSerious[match(DF_ClassCat$ClassCategory, DF_temp$ClassCategory)]
-DF_ClassCat$CAL.Cost <- DF_temp$sumCAL[match(DF_ClassCat$ClassCategory, DF_temp$ClassCategory)]
 #### Replace NA with 0
 DF_ClassCat$WO.Cost[is.na(DF_ClassCat$WO.Cost)] <- 0
 DF_ClassCat$COR.Cost[is.na(DF_ClassCat$COR.Cost)] <- 0
+DF_ClassCat$MOD.Cost[is.na(DF_ClassCat$CAL.Cost)] <- 0
 DF_ClassCat$PM.Cost[is.na(DF_ClassCat$PM.Cost)] <- 0
+DF_ClassCat$CAL.Cost[is.na(DF_ClassCat$CAL.Cost)] <- 0
+DF_ClassCat$FAIL.Cost[is.na(DF_ClassCat$FAIL.Cost)] <- 0
 DF_ClassCat$Urgent.Cost[is.na(DF_ClassCat$Urgent.Cost)] <- 0
 DF_ClassCat$Serious.Cost[is.na(DF_ClassCat$Serious.Cost)] <- 0
-DF_ClassCat$CAL.Cost[is.na(DF_ClassCat$CAL.Cost)] <- 0
 rm(DF_temp)
+
 #### Add WO downtime totals ClassCat DF
 #### Collect the dt in a temp dataframe (all, COR, and PM all at once)
 DF_temp <- DF_Equip %>%
@@ -470,69 +555,472 @@ DF_ClassCat <- transform(DF_ClassCat, WO.CostPerYr = (WO.Cost/Count)/nrow(DF_Yea
 DF_ClassCat <- transform(DF_ClassCat, COR.CountPerYr = (COR.Count/Count)/nrow(DF_Year)) 
 DF_ClassCat <- transform(DF_ClassCat, COR.HoursPerYr = (COR.Hours/Count)/nrow(DF_Year)) 
 DF_ClassCat <- transform(DF_ClassCat, COR.CostPerYr = (COR.Cost/Count)/nrow(DF_Year)) 
+DF_ClassCat <- transform(DF_ClassCat, MOD.CountPerYr = (MOD.Count/Count)/nrow(DF_Year)) 
+DF_ClassCat <- transform(DF_ClassCat, MOD.HoursPerYr = (MOD.Hours/Count)/nrow(DF_Year)) 
+DF_ClassCat <- transform(DF_ClassCat, MOD.CostPerYr = (MOD.Cost/Count)/nrow(DF_Year))
 DF_ClassCat <- transform(DF_ClassCat, PM.CountPerYr = (PM.Count/Count)/nrow(DF_Year)) 
 DF_ClassCat <- transform(DF_ClassCat, PM.HoursPerYr = (PM.Hours/Count)/nrow(DF_Year)) 
 DF_ClassCat <- transform(DF_ClassCat, PM.CostPerYr = (PM.Cost/Count)/nrow(DF_Year))
+DF_ClassCat <- transform(DF_ClassCat, CAL.CountPerYr = (CAL.Count/Count)/nrow(DF_Year)) 
+DF_ClassCat <- transform(DF_ClassCat, CAL.HoursPerYr = (CAL.Hours/Count)/nrow(DF_Year)) 
+DF_ClassCat <- transform(DF_ClassCat, CAL.CostPerYr = (CAL.Cost/Count)/nrow(DF_Year))
+DF_ClassCat <- transform(DF_ClassCat, FAIL.CountPerYr = (FAIL.Count/Count)/nrow(DF_Year)) 
+DF_ClassCat <- transform(DF_ClassCat, FAIL.HoursPerYr = (FAIL.Hours/Count)/nrow(DF_Year)) 
+DF_ClassCat <- transform(DF_ClassCat, FAIL.CostPerYr = (FAIL.Cost/Count)/nrow(DF_Year))
 DF_ClassCat <- transform(DF_ClassCat, Urgent.CountPerYr = (Urgent.Count/Count)/nrow(DF_Year))
 DF_ClassCat <- transform(DF_ClassCat, Urgent.HoursPerYr = (Urgent.Hours/Count)/nrow(DF_Year)) 
 DF_ClassCat <- transform(DF_ClassCat, Urgent.CostPerYr = (Urgent.Cost/Count)/nrow(DF_Year)) 
 DF_ClassCat <- transform(DF_ClassCat, Serious.CountPerYr = (Serious.Count/Count)/nrow(DF_Year))
 DF_ClassCat <- transform(DF_ClassCat, Serious.HoursPerYr = (Serious.Hours/Count)/nrow(DF_Year)) 
 DF_ClassCat <- transform(DF_ClassCat, Serious.CostPerYr = (Serious.Cost/Count)/nrow(DF_Year))
-DF_ClassCat <- transform(DF_ClassCat, CAL.CountPerYr = (CAL.Count/Count)/nrow(DF_Year)) 
-DF_ClassCat <- transform(DF_ClassCat, CAL.HoursPerYr = (CAL.Hours/Count)/nrow(DF_Year)) 
-DF_ClassCat <- transform(DF_ClassCat, CAL.CostPerYr = (CAL.Cost/Count)/nrow(DF_Year))
 DF_ClassCat <- transform(DF_ClassCat, WO.DTPerYr = (WO.DT/Count)/nrow(DF_Year))
+
+
+## Make yearly dataframes to support 'Top3' charting
 
 #### Make a ClassCat by Year&Type DF
 #### Make a DF that counts WOs in groups of Classcat, Type, & Year
 DF_CCYearType <- DF_WO %>%
-  group_by(ClassCategory, WO.Type, Complete.Year) %>%  
+  group_by(ClassCategory, WO.Type, Impact, Complete.Year) %>%  
   summarise(n = n())
 ##### Add columns from classCat to have access to equipment count per classCat to calc rates for each type-year combo
 DF_CCYearType <- merge(DF_CCYearType, DF_ClassCat, by.x="ClassCategory", by.y="ClassCategory", all.x=T)
 ##### Rename n to something more understandable
 colnames(DF_CCYearType)[colnames(DF_CCYearType)=="n"] <- "WO.Count.Annual"
 ##### Trim to just the desired columns
-DF_CCYearType <- subset(DF_CCYearType, select=c(ClassCategory, WO.Type, Complete.Year, WO.Count.Annual, Class, Category, Count))
+DF_CCYearType <- subset(DF_CCYearType, select=c(ClassCategory, WO.Type, Impact, Complete.Year, WO.Count.Annual, Class, Category, Count))
 ##### Add a rate that accounts for size of classCat
 DF_CCYearType <- transform(DF_CCYearType, WO.Count.Rate = round(WO.Count.Annual/Count,3))
 
 #### Make a EAMS ID by Year&Type DF
 #### Make a DF that counts WOs in groups of EAMS ID, Type, & Year
 DF_EqYearType <- DF_WO %>%
-  group_by(Object.Code, WO.Type, Complete.Year) %>%  
+  group_by(Object.Code, WO.Type, Impact, Complete.Year) %>%  
   summarise(n = n())
 ##### Add columns from Equip to have access to equipment count per EAMS ID to calc rates for each type-year combo
 DF_EqYearType <- merge(DF_EqYearType, DF_Equip, by.x="Object.Code", by.y="Object", all.x=T)
 ##### Rename n to something more understandable
 colnames(DF_EqYearType)[colnames(DF_EqYearType)=="n"] <- "WO.Count.Annual"
 ##### Trim to just the desired columns
-DF_EqYearType <- subset(DF_EqYearType, select=c(Object.Code, WO.Type, Complete.Year, WO.Count.Annual, Class, Category))
+DF_EqYearType <- subset(DF_EqYearType, select=c(Object.Code, WO.Type, Impact, Complete.Year, WO.Count.Annual, Class, Category))
 ##### Don't need a rate as this is by EAMS ID - so there is only a count of 1 for each
 
 
-## Corrective Work Order Distribution - Trend
+## WO Trend Plots
+### Calculate averages
+VAR_avgWOCount <- sum(DF_Year$WO.Count)/nrow(DF_Year)
+VAR_avgWOHours <- sum(DF_Year$WO.Hours)/nrow(DF_Year)
+VAR_avgWOCost <- sum(DF_Year$WO.Cost)/nrow(DF_Year)
+VAR_avgCORCount <- sum(DF_Year$COR.Count)/nrow(DF_Year)
+VAR_avgCORHours <- sum(DF_Year$COR.Hours)/nrow(DF_Year)
+VAR_avgCORCost <- sum(DF_Year$COR.Cost)/nrow(DF_Year)
+VAR_avgMODCount <- sum(DF_Year$MOD.Count)/nrow(DF_Year)
+VAR_avgMODHours <- sum(DF_Year$MOD.Hours)/nrow(DF_Year)
+VAR_avgMODCost <- sum(DF_Year$MOD.Cost)/nrow(DF_Year)
+VAR_avgPMCount <- sum(DF_Year$PM.Count)/nrow(DF_Year)
+VAR_avgPMHours <- sum(DF_Year$PM.Hours)/nrow(DF_Year)
+VAR_avgPMCost <- sum(DF_Year$PM.Cost)/nrow(DF_Year)
+VAR_avgCALCount <- sum(DF_Year$CAL.Count)/nrow(DF_Year)
+VAR_avgCALHours <- sum(DF_Year$CAL.Hours)/nrow(DF_Year)
+VAR_avgCALCost <- sum(DF_Year$CAL.Cost)/nrow(DF_Year)
+VAR_avgFAILCount <- sum(DF_Year$FAIL.Count)/nrow(DF_Year)
+VAR_avgFAILHours <- sum(DF_Year$FAIL.Hours)/nrow(DF_Year)
+VAR_avgFAILCost <- sum(DF_Year$FAIL.Cost)/nrow(DF_Year)
+VAR_avgURGENTCount <- sum(DF_Year$Urgent.Count)/nrow(DF_Year)
+VAR_avgURGENTHours <- sum(DF_Year$Urgent.Hours)/nrow(DF_Year)
+VAR_avgURGENTCost <- sum(DF_Year$Urgent.Cost)/nrow(DF_Year)
+VAR_avgSERIOUSCount <- sum(DF_Year$Serious.Count)/nrow(DF_Year)
+VAR_avgSERIOUSHours <- sum(DF_Year$Serious.Hours)/nrow(DF_Year)
+VAR_avgSERIOUSCost <- sum(DF_Year$Serious.Cost)/nrow(DF_Year)
+### Put deviations from average by year into DF_Year
+DF_Year <- transform(DF_Year, WO.CountDev = (round(WO.Count/VAR_avgWOCount,2)))
+DF_Year <- transform(DF_Year, WO.HoursDev = (round(WO.Hours/VAR_avgWOHours,2)))
+DF_Year <- transform(DF_Year, WO.CostDev = (round(WO.Cost/VAR_avgWOCost,2)))
+DF_Year <- transform(DF_Year, COR.CountDev = (round(COR.Count/VAR_avgCORCount,2)))
+DF_Year <- transform(DF_Year, COR.HoursDev = (round(COR.Hours/VAR_avgCORHours,2)))
+DF_Year <- transform(DF_Year, COR.CostDev = (round(COR.Cost/VAR_avgCORCost,2)))
+DF_Year <- transform(DF_Year, MOD.CountDev = (round(MOD.Count/VAR_avgMODCount,2)))
+DF_Year <- transform(DF_Year, MOD.HoursDev = (round(MOD.Hours/VAR_avgMODHours,2)))
+DF_Year <- transform(DF_Year, MOD.CostDev = (round(MOD.Cost/VAR_avgMODCost,2)))
+DF_Year <- transform(DF_Year, PM.CountDev = (round(PM.Count/VAR_avgPMCount,2)))
+DF_Year <- transform(DF_Year, PM.HoursDev = (round(PM.Hours/VAR_avgPMHours,2)))
+DF_Year <- transform(DF_Year, PM.CostDev = (round(PM.Cost/VAR_avgPMCost,2)))
+DF_Year <- transform(DF_Year, CAL.CountDev = (round(CAL.Count/VAR_avgCALCount,2)))
+DF_Year <- transform(DF_Year, CAL.HoursDev = (round(CAL.Hours/VAR_avgCALHours,2)))
+DF_Year <- transform(DF_Year, CAL.CostDev = (round(CAL.Cost/VAR_avgCALCost,2)))
+DF_Year <- transform(DF_Year, FAIL.CountDev = (round(FAIL.Count/VAR_avgFAILCount,2)))
+DF_Year <- transform(DF_Year, FAIL.HoursDev = (round(FAIL.Hours/VAR_avgFAILHours,2)))
+DF_Year <- transform(DF_Year, FAIL.CostDev = (round(FAIL.Cost/VAR_avgFAILCost,2)))
+DF_Year <- transform(DF_Year, Urgent.CountDev = (round(Urgent.Count/VAR_avgURGENTCount,2)))
+DF_Year <- transform(DF_Year, Urgent.HoursDev = (round(Urgent.Hours/VAR_avgURGENTHours,2)))
+DF_Year <- transform(DF_Year, Urgent.CostDev = (round(Urgent.Cost/VAR_avgURGENTCost,2)))
+DF_Year <- transform(DF_Year, Serious.CountDev = (round(Serious.Count/VAR_avgSERIOUSCount,2)))
+DF_Year <- transform(DF_Year, Serious.HoursDev = (round(Serious.Hours/VAR_avgSERIOUSHours,2)))
+DF_Year <- transform(DF_Year, Serious.CostDev = (round(Serious.Cost/VAR_avgSERIOUSCost,2)))
 
-#### Plot trend of corrective WO rate by year
-PLOT_CORRate <- ggplot(data=DF_Year, aes(x=Year, y=COR.Rate)) +
-  geom_line(color="darkslategray", linewidth=1.5) +
-  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
-  labs(title="Corrective WO Rate by Year") +
+### Plot for all WOs
+#### Grab the pertinent data for plotting
+LST_keep <- c("Year", "WO.CountDev", "WO.HoursDev", "WO.CostDev")
+DF_Plot <- DF_Year[LST_keep]
+#### Produce a transposed DF for use in plotting
+DF_Plot <- gather(DF_Plot, Trend, Dev, WO.CountDev:WO.CostDev)
+DF_Plot[DF_Plot == "WO.CountDev"] <- "Count"
+DF_Plot[DF_Plot == "WO.HoursDev"] <- "Hours"
+DF_Plot[DF_Plot == "WO.CostDev"] <- "Cost"
+#### Plot on a line graph
+PLOT_WOTrend <- ggplot(data=DF_Plot, aes(x=Year, y=Dev, color=Trend)) +
+  geom_line(linewidth=1.5) +
+  scale_color_manual(values=c('chartreuse4', 'firebrick4', 'darkblue')) +
+  scale_y_continuous(expand = expansion(mult = c(.05, .05)), limits = c(0, 2)) +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red", linewidth = 1) +
+  annotate("text", x=max(DF_Year$Year), y=0.4, label=paste("Averages:","\n",format(round(VAR_avgWOCount,0), nsmall=0, big.mark=",")," WOs\n",format(round(VAR_avgWOHours,0), nsmall=0, big.mark=",")," Hrs\n","$",format(round(VAR_avgWOCost,0), nsmall=0, big.mark=","), sep=""),hjust=0, vjust=1, size=4) +
+  coord_cartesian(clip="off") +
+  labs(title="Work Order Trends") +
   xlab("Year") +
-  ylab("COR WO Count per EAMS ID") +
+  ylab("Deviation From Average") +
+  guides(color = guide_legend(reverse=T)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
+PLOT_WOTrend
+rm(DF_Plot)
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/WOTrend.png",sep=""))}
+
+### Plot for COR WOs
+#### Grab the pertinent data for plotting
+LST_keep <- c("Year", "COR.CountDev", "COR.HoursDev", "COR.CostDev")
+DF_Plot <- DF_Year[LST_keep]
+#### Produce a transposed DF for use in plotting
+DF_Plot <- gather(DF_Plot, Trend, Dev, COR.CountDev:COR.CostDev)
+DF_Plot[DF_Plot == "COR.CountDev"] <- "Count"
+DF_Plot[DF_Plot == "COR.HoursDev"] <- "Hours"
+DF_Plot[DF_Plot == "COR.CostDev"] <- "Cost"
+#### Plot on a line graph
+PLOT_CORTrend <- ggplot(data=DF_Plot, aes(x=Year, y=Dev, color=Trend)) +
+  geom_line(linewidth=1.5) +
+  scale_color_manual(values=c('chartreuse4', 'firebrick4', 'darkblue')) +
+  scale_y_continuous(expand = expansion(mult = c(.05, .05)), limits = c(0, 2)) +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red", linewidth = 1) +
+  annotate("text", x=max(DF_Year$Year), y=0.4, label=paste("Averages:","\n",format(round(VAR_avgCORCount,0), nsmall=0, big.mark=",")," WOs\n",format(round(VAR_avgCORHours,0), nsmall=0, big.mark=",")," Hrs\n","$",format(round(VAR_avgCORCost,0), nsmall=0, big.mark=","), sep=""),hjust=0, vjust=1, size=4) +
+  coord_cartesian(clip="off") +
+  labs(title="COR Work Order Trends") +
+  xlab("Year") +
+  ylab("Deviation From Average") +
+  guides(color = guide_legend(reverse=T)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
+PLOT_CORTrend
+rm(DF_Plot)
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CORTrend.png",sep=""))}
+
+### Plot for MOD WOs
+#### Grab the pertinent data for plotting
+LST_keep <- c("Year", "MOD.CountDev", "MOD.HoursDev", "MOD.CostDev")
+DF_Plot <- DF_Year[LST_keep]
+#### Produce a transposed DF for use in plotting
+DF_Plot <- gather(DF_Plot, Trend, Dev, MOD.CountDev:MOD.CostDev)
+DF_Plot[DF_Plot == "MOD.CountDev"] <- "Count"
+DF_Plot[DF_Plot == "MOD.HoursDev"] <- "Hours"
+DF_Plot[DF_Plot == "MOD.CostDev"] <- "Cost"
+#### Plot on a line graph
+PLOT_MODTrend <- ggplot(data=DF_Plot, aes(x=Year, y=Dev, color=Trend)) +
+  geom_line(linewidth=1.5) +
+  scale_color_manual(values=c('chartreuse4', 'firebrick4', 'darkblue')) +
+  scale_y_continuous(expand = expansion(mult = c(.05, .05)), limits = c(0, 2)) +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red", linewidth = 1) +
+  annotate("text", x=max(DF_Year$Year), y=0.4, label=paste("Averages:","\n",format(round(VAR_avgMODCount,0), nsmall=0, big.mark=",")," WOs\n",format(round(VAR_avgMODHours,0), nsmall=0, big.mark=",")," Hrs\n","$",format(round(VAR_avgMODCost,0), nsmall=0, big.mark=","), sep=""),hjust=0, vjust=1, size=4) +
+  coord_cartesian(clip="off") +
+  labs(title="MOD Work Order Trends") +
+  xlab("Year") +
+  ylab("Deviation From Average") +
+  guides(color = guide_legend(reverse=T)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
+PLOT_MODTrend
+rm(DF_Plot)
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/MODTrend.png",sep=""))}
+
+### Plot for PM WOs
+#### Grab the pertinent data for plotting
+LST_keep <- c("Year", "PM.CountDev", "PM.HoursDev", "PM.CostDev")
+DF_Plot <- DF_Year[LST_keep]
+#### Produce a transposed DF for use in plotting
+DF_Plot <- gather(DF_Plot, Trend, Dev, PM.CountDev:PM.CostDev)
+DF_Plot[DF_Plot == "PM.CountDev"] <- "Count"
+DF_Plot[DF_Plot == "PM.HoursDev"] <- "Hours"
+DF_Plot[DF_Plot == "PM.CostDev"] <- "Cost"
+#### Plot on a line graph
+PLOT_PMTrend <- ggplot(data=DF_Plot, aes(x=Year, y=Dev, color=Trend)) +
+  geom_line(linewidth=1.5) +
+  scale_color_manual(values=c('chartreuse4', 'firebrick4', 'darkblue')) +
+  scale_y_continuous(expand = expansion(mult = c(.05, .05)), limits = c(0, 2)) +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red", linewidth = 1) +
+  annotate("text", x=max(DF_Year$Year), y=0.4, label=paste("Averages:","\n",format(round(VAR_avgPMCount,0), nsmall=0, big.mark=",")," WOs\n",format(round(VAR_avgPMHours,0), nsmall=0, big.mark=",")," Hrs\n","$",format(round(VAR_avgPMCost,0), nsmall=0, big.mark=","), sep=""),hjust=0, vjust=1, size=4) +
+  coord_cartesian(clip="off") +
+  labs(title="PM Work Order Trends") +
+  xlab("Year") +
+  ylab("Deviation From Average") +
+  guides(color = guide_legend(reverse=T)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
+PLOT_PMTrend
+rm(DF_Plot)
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/PMTrend.png",sep=""))}
+
+### Plot for CAL WOs
+#### Grab the pertinent data for plotting
+LST_keep <- c("Year", "CAL.CountDev", "CAL.HoursDev", "CAL.CostDev")
+DF_Plot <- DF_Year[LST_keep]
+#### Produce a transposed DF for use in plotting
+DF_Plot <- gather(DF_Plot, Trend, Dev, CAL.CountDev:CAL.CostDev)
+DF_Plot[DF_Plot == "CAL.CountDev"] <- "Count"
+DF_Plot[DF_Plot == "CAL.HoursDev"] <- "Hours"
+DF_Plot[DF_Plot == "CAL.CostDev"] <- "Cost"
+#### Plot on a line graph
+PLOT_CALTrend <- ggplot(data=DF_Plot, aes(x=Year, y=Dev, color=Trend)) +
+  geom_line(linewidth=1.5) +
+  scale_color_manual(values=c('chartreuse4', 'firebrick4', 'darkblue')) +
+  scale_y_continuous(expand = expansion(mult = c(.05, .05)), limits = c(0, 2)) +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red", linewidth = 1) +
+  annotate("text", x=max(DF_Year$Year), y=0.4, label=paste("Averages:","\n",format(round(VAR_avgCALCount,0), nsmall=0, big.mark=",")," WOs\n",format(round(VAR_avgCALHours,0), nsmall=0, big.mark=",")," Hrs\n","$",format(round(VAR_avgCALCost,0), nsmall=0, big.mark=","), sep=""),hjust=0, vjust=1, size=4) +
+  coord_cartesian(clip="off") +
+  labs(title="CAL Work Order Trends") +
+  xlab("Year") +
+  ylab("Deviation From Average") +
+  guides(color = guide_legend(reverse=T)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
+PLOT_CALTrend
+rm(DF_Plot)
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CALTrend.png",sep=""))}
+
+### Plot for FAIL WOs
+#### Grab the pertinent data for plotting
+LST_keep <- c("Year", "FAIL.CountDev", "FAIL.HoursDev", "FAIL.CostDev")
+DF_Plot <- DF_Year[LST_keep]
+#### Produce a transposed DF for use in plotting
+DF_Plot <- gather(DF_Plot, Trend, Dev, FAIL.CountDev:FAIL.CostDev)
+DF_Plot[DF_Plot == "FAIL.CountDev"] <- "Count"
+DF_Plot[DF_Plot == "FAIL.HoursDev"] <- "Hours"
+DF_Plot[DF_Plot == "FAIL.CostDev"] <- "Cost"
+#### Plot on a line graph
+PLOT_FAILTrend <- ggplot(data=DF_Plot, aes(x=Year, y=Dev, color=Trend)) +
+  geom_line(linewidth=1.5) +
+  scale_color_manual(values=c('chartreuse4', 'firebrick4', 'darkblue')) +
+  scale_y_continuous(expand = expansion(mult = c(.05, .05)), limits = c(0, 2)) +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red", linewidth = 1) +
+  annotate("text", x=max(DF_Year$Year), y=0.4, label=paste("Averages:","\n",format(round(VAR_avgFAILCount,0), nsmall=0, big.mark=",")," WOs\n",format(round(VAR_avgFAILHours,0), nsmall=0, big.mark=",")," Hrs\n","$",format(round(VAR_avgFAILCost,0), nsmall=0, big.mark=","), sep=""),hjust=0, vjust=1, size=4) +
+  coord_cartesian(clip="off") +
+  labs(title="Failure Work Order Trends") +
+  xlab("Year") +
+  ylab("Deviation From Average") +
+  guides(color = guide_legend(reverse=T)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
+PLOT_FAILTrend
+rm(DF_Plot)
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/FAILTrend.png",sep=""))}
+
+### Plot for Serious WOs
+#### Grab the pertinent data for plotting
+LST_keep <- c("Year", "Serious.CountDev", "Serious.HoursDev", "Serious.CostDev")
+DF_Plot <- DF_Year[LST_keep]
+#### Produce a transposed DF for use in plotting
+DF_Plot <- gather(DF_Plot, Trend, Dev, Serious.CountDev:Serious.CostDev)
+DF_Plot[DF_Plot == "Serious.CountDev"] <- "Count"
+DF_Plot[DF_Plot == "Serious.HoursDev"] <- "Hours"
+DF_Plot[DF_Plot == "Serious.CostDev"] <- "Cost"
+#### Plot on a line graph
+PLOT_SERIOUSTrend <- ggplot(data=DF_Plot, aes(x=Year, y=Dev, color=Trend)) +
+  geom_line(linewidth=1.5) +
+  scale_color_manual(values=c('chartreuse4', 'firebrick4', 'darkblue')) +
+  scale_y_continuous(expand = expansion(mult = c(.05, .05)), limits = c(0, 2)) +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red", linewidth = 1) +
+  annotate("text", x=max(DF_Year$Year), y=0.4, label=paste("Averages:","\n",format(round(VAR_avgFAILCount,0), nsmall=0, big.mark=",")," WOs\n",format(round(VAR_avgFAILHours,0), nsmall=0, big.mark=",")," Hrs\n","$",format(round(VAR_avgFAILCost,0), nsmall=0, big.mark=","), sep=""),hjust=0, vjust=1, size=4) +
+  coord_cartesian(clip="off") +
+  labs(title="Serious Failure Work Order Trends") +
+  xlab("Year") +
+  ylab("Deviation From Average") +
+  guides(color = guide_legend(reverse=T)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
+PLOT_SERIOUSTrend
+rm(DF_Plot)
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/SERIOUSTrend.png",sep=""))}
+
+### Plot for Urgent WOs
+#### Grab the pertinent data for plotting
+LST_keep <- c("Year", "Urgent.CountDev", "Urgent.HoursDev", "Urgent.CostDev")
+DF_Plot <- DF_Year[LST_keep]
+#### Produce a transposed DF for use in plotting
+DF_Plot <- gather(DF_Plot, Trend, Dev, Urgent.CountDev:Urgent.CostDev)
+DF_Plot[DF_Plot == "Urgent.CountDev"] <- "Count"
+DF_Plot[DF_Plot == "Urgent.HoursDev"] <- "Hours"
+DF_Plot[DF_Plot == "Urgent.CostDev"] <- "Cost"
+#### Plot on a line graph
+PLOT_URGENTTrend <- ggplot(data=DF_Plot, aes(x=Year, y=Dev, color=Trend)) +
+  geom_line(linewidth=1.5) +
+  scale_color_manual(values=c('chartreuse4', 'firebrick4', 'darkblue')) +
+  scale_y_continuous(expand = expansion(mult = c(.05, .05)), limits = c(0, 2)) +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red", linewidth = 1) +
+  annotate("text", x=max(DF_Year$Year), y=0.4, label=paste("Averages:","\n",format(round(VAR_avgFAILCount,0), nsmall=0, big.mark=",")," WOs\n",format(round(VAR_avgFAILHours,0), nsmall=0, big.mark=",")," Hrs\n","$",format(round(VAR_avgFAILCost,0), nsmall=0, big.mark=","), sep=""),hjust=0, vjust=1, size=4) +
+  coord_cartesian(clip="off") +
+  labs(title="Urgent Failure Work Order Trends") +
+  xlab("Year") +
+  ylab("Deviation From Average") +
+  guides(color = guide_legend(reverse=T)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
+PLOT_URGENTTrend
+rm(DF_Plot)
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/URGENTTrend.png",sep=""))}
+
+
+## Plot downtime trend
+### Collect downtime of failure work orders by year
+DF_Plot <- DF_WO[(DF_WO$WO.Type=="COR" | DF_WO$WO.Type=="MOD") & (DF_WO$Impact!="NOFAIL") & (!is.na(DF_WO$DowntimeHours)) & (DF_WO$DowntimeHours>0),]
+LST_keep <- c("Complete.Year", "DowntimeHours")
+DF_Plot <- DF_Plot[LST_keep]
+DF_Plot <- DF_Plot %>%
+  group_by(Complete.Year) %>%
+  summarise(sum = sum(DowntimeHours), avg = mean(DowntimeHours))
+rm(LST_keep)
+### Plot
+PLOT_DTTrend <- ggplot(data=DF_Plot, aes(x=Complete.Year, y=sum)) +
+  geom_line(color="firebrick4", linewidth=1.5) +
+  scale_y_continuous(expand = expansion(mult = c(.0, .05)), limits = c(0, NA)) +
+  labs(title="Total Annual Failure-Related Downtime Hours") +
+  xlab("Year") +
+  ylab("Hours") +
+  guides(color = guide_legend(reverse=T)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
+PLOT_DTTrend
+rm(DF_Plot)
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/DTTrend.png",sep=""))}
+
+
+## Corrective Work Order Count/Hours/Cost Rate (per equip) Distribution for WO Types
+
+### Chart All WO count by EAMS ID
+DF_Plot = DF_Equip[order(DF_Equip$WO.Count, decreasing=TRUE),]
+DF_Plot <- transform(DF_Plot, WO.Count = (WO.Count/nrow(DF_Year)))
+##### plot
+PLOT_EQWOCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-WO.Count), y=WO.Count)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
+  labs(title="Average Annual WO Count by EAMS ID") +
+  xlab("EAMS ID") +
+  ylab("Count / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
+rm(DF_Plot)
+PLOT_EQWOCount
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQWOCount.png",sep=""))}
+
+### Chart All WO Rate by classCat
+DF_Plot = DF_ClassCat[order(DF_ClassCat$WO.CountPerYr, decreasing=TRUE),]
+#### plot
+PLOT_CCWOCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-WO.CountPerYr), y=WO.CountPerYr)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
+  labs(title="Average Annual WO Count per Equip by Class-Category") +
+  xlab("Class-Category") +
+  ylab("Count / Machine / Year") +
   theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
   theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
   theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
-PLOT_CORRate
+rm(DF_Plot)
+PLOT_CCWOCount
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCWOCount.png",sep=""))}
+
+### Chart all WO hours by EAMS ID
+DF_Plot = DF_Equip[order(DF_Equip$WO.Hours, decreasing=TRUE),]
+DF_Plot <- transform(DF_Plot, WO.Hours = (WO.Hours/nrow(DF_Year)))
+##### plot
+PLOT_EQWOHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-WO.Hours), y=WO.Hours)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
+  labs(title="Average Annual WO Hours by EAMS ID") +
+  xlab("EAMS ID") +
+  ylab("Hours / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
+rm(DF_Plot)
+PLOT_EQWOHours
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQWOHours.png",sep=""))}
+
+### Chart all WO Hours per Year by classCat
+DF_Plot = DF_ClassCat[order(DF_ClassCat$WO.HoursPerYr, decreasing=TRUE),]
+#### plot
+PLOT_CCWOHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-WO.HoursPerYr), y=WO.HoursPerYr)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
+  labs(title="Average Annual WO Hours per Equip by Class-Category") +
+  xlab("Class-Category") +
+  ylab("Hours / Machine / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
+rm(DF_Plot)
+PLOT_CCWOHours
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCWOHours.png",sep=""))}
+
+### Chart all WO cost by EAMS ID
+DF_Plot = DF_Equip[order(DF_Equip$WO.Cost, decreasing=TRUE),]
+DF_Plot <- transform(DF_Plot, WO.Cost = (WO.Cost/nrow(DF_Year)))
+##### plot
+PLOT_EQWOCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-WO.Cost), y=WO.Cost)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA), labels=scales::dollar_format()) +
+  labs(title="Average Annual WO Cost by EAMS ID") +
+  xlab("EAMS ID") +
+  ylab("Cost / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
+rm(DF_Plot)
+PLOT_EQWOCost
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQWOCost.png",sep=""))}
+
+### Chart all WO Cost per Year by classCat
+DF_Plot = DF_ClassCat[order(DF_ClassCat$WO.CostPerYr, decreasing=TRUE),]
+#### plot
+PLOT_CCWOCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-WO.CostPerYr), y=WO.CostPerYr)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA), labels=scales::dollar_format()) +
+  labs(title="Average Annual WO Cost per Equip by Class-Category") +
+  xlab("Class-Category") +
+  ylab("Cost / Machine / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
+rm(DF_Plot)
+PLOT_CCWOCost
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCWOCost.png",sep=""))}
 
 ### Chart COR count by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$COR.Count, decreasing=TRUE),]
 DF_Plot <- transform(DF_Plot, COR.Count = (COR.Count/nrow(DF_Year)))
 ##### plot
 PLOT_EQCORCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-COR.Count), y=COR.Count)) +
-  geom_bar(stat="identity", fill="darkslategray") +
+  geom_bar(stat="identity", fill="chartreuse4") +
   scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
   labs(title="Average Annual COR Count by EAMS ID") +
   xlab("EAMS ID") +
@@ -541,76 +1029,33 @@ PLOT_EQCORCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-COR.Count
   theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
   theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
-#### Grab the top 3 EAMS IDs before removing the temporary DF
-LST_TOP3Equip_COR = head(DF_Plot$Object,3)
 rm(DF_Plot)
 PLOT_EQCORCount
-
-### Trend COR Rate by EAMS ID by Year for top 3 IDs
-DF_Plot <- DF_EqYearType[DF_EqYearType$Object.Code %in% LST_TOP3Equip_COR,]
-DF_Plot <- subset(DF_Plot, WO.Type == "COR")
-### Plot on a line graph
-PLOT_TOP3Equip_COR <- ggplot(data=DF_Plot, aes(x=Complete.Year, y=WO.Count.Annual, color=Object.Code)) +
-  geom_line(linewidth=1.5) +
-  scale_color_manual(values=c('darkslategray', 'firebrick4', 'chartreuse4')) +
-  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
-  labs(title="Corrective WO Count by Year for top 3 EAMS ID") +
-  xlab("Year") +
-  ylab("Count") +
-  guides(color = guide_legend(reverse=T)) +
-  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
-  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
-  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
-  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
-#rm(DF_Plot)
-PLOT_TOP3Equip_COR
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQCORCount.png",sep=""))}
 
 ### Chart COR Rate by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$COR.CountPerYr, decreasing=TRUE),]
 #### plot
 PLOT_CCCORCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-COR.CountPerYr), y=COR.CountPerYr)) +
-  geom_bar(stat="identity", fill="darkslategray") +
+  geom_bar(stat="identity", fill="chartreuse4") +
   scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
-  labs(title="Average Annual COR Count by Class-Category") +
+  labs(title="Average Annual COR Count per Equip by Class-Category") +
   xlab("Class-Category") +
   ylab("Count / Machine / Year") +
   theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
   theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
   theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
-#### Grab the top 3 classcats before removing the temporary DF
-LST_TOP3ClassCat_COR = head(DF_Plot$ClassCategory,3)
 rm(DF_Plot)
 PLOT_CCCORCount
-
-### Trend COR Rate by classCat by Year for top 3 classCats
-DF_Plot <- DF_CCYearType[DF_CCYearType$ClassCategory %in% LST_TOP3ClassCat_COR,]
-DF_Plot <- subset(DF_Plot, WO.Type == "COR")
-### Plot on a line graph
-PLOT_TOP3ClassCat_COR <- ggplot(data=DF_Plot, aes(x=Complete.Year, y=WO.Count.Rate, color=ClassCategory)) +
-  geom_line(linewidth=1.5) +
-  scale_color_manual(values=c('darkslategray', 'firebrick4', 'chartreuse4')) +
-  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
-  labs(title="Corrective WO Count by Year for top 3 Class-Categories") +
-  xlab("Year") +
-  ylab("Count") +
-  guides(color = guide_legend(reverse=T))
-  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
-  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
-  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
-  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
-PLOT_TOP3ClassCat_COR
-rm(DF_Plot)
-
-
-## Corrective Work Order Hours Distribution
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCCORCount.png",sep=""))}
 
 ### Chart COR hours by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$COR.Hours, decreasing=TRUE),]
 DF_Plot <- transform(DF_Plot, COR.Hours = (COR.Hours/nrow(DF_Year)))
 ##### plot
 PLOT_EQCORHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-COR.Hours), y=COR.Hours)) +
-  geom_bar(stat="identity", fill="darkslategray") +
+  geom_bar(stat="identity", fill="chartreuse4") +
   scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
   labs(title="Average Annual COR Hours by EAMS ID") +
   xlab("EAMS ID") +
@@ -621,14 +1066,15 @@ PLOT_EQCORHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-COR.Hours
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_EQCORHours
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQCORHours.png",sep=""))}
 
 ### Chart COR Hours per Year by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$COR.HoursPerYr, decreasing=TRUE),]
 #### plot
 PLOT_CCCORHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-COR.CountPerYr), y=COR.CountPerYr)) +
-  geom_bar(stat="identity", fill="darkslategray") +
+  geom_bar(stat="identity", fill="chartreuse4") +
   scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
-  labs(title="Average Annual COR Hours by Class-Category") +
+  labs(title="Average Annual COR Hours per Equip by Class-Category") +
   xlab("Class-Category") +
   ylab("Hours / Machine / Year") +
   theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
@@ -637,15 +1083,14 @@ PLOT_CCCORHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-CO
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_CCCORHours
-
-## Corrective Work Order Cost Distribution
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCCORHours.png",sep=""))}
 
 ### Chart COR cost by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$COR.Cost, decreasing=TRUE),]
 DF_Plot <- transform(DF_Plot, COR.Cost = (COR.Cost/nrow(DF_Year)))
 ##### plot
 PLOT_EQCORCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-COR.Cost), y=COR.Cost)) +
-  geom_bar(stat="identity", fill="darkslategray") +
+  geom_bar(stat="identity", fill="chartreuse4") +
   scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA), labels=scales::dollar_format()) +
   labs(title="Average Annual COR Cost by EAMS ID") +
   xlab("EAMS ID") +
@@ -656,14 +1101,15 @@ PLOT_EQCORCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-COR.Cost),
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_EQCORCost
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQCORCost.png",sep=""))}
 
 ### Chart COR Cost per Year by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$COR.CostPerYr, decreasing=TRUE),]
 #### plot
 PLOT_CCCORCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-COR.CostPerYr), y=COR.CostPerYr)) +
-  geom_bar(stat="identity", fill="darkslategray") +
+  geom_bar(stat="identity", fill="chartreuse4") +
   scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA), labels=scales::dollar_format()) +
-  labs(title="Average Annual COR Cost by Class-Category") +
+  labs(title="Average Annual COR Cost per Equip by Class-Category") +
   xlab("Class-Category") +
   ylab("Cost / Machine / Year") +
   theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
@@ -672,13 +1118,119 @@ PLOT_CCCORCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-COR
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_CCCORCost
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCCORCost.png",sep=""))}
+
+### Chart MOD count by EAMS ID
+DF_Plot = DF_Equip[order(DF_Equip$MOD.Count, decreasing=TRUE),]
+DF_Plot <- transform(DF_Plot, MOD.Count = (MOD.Count/nrow(DF_Year)))
+##### plot
+PLOT_EQMODCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-MOD.Count), y=MOD.Count)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
+  labs(title="Average Annual MOD Count by EAMS ID") +
+  xlab("EAMS ID") +
+  ylab("Count / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
+rm(DF_Plot)
+PLOT_EQMODCount
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQMODCount.png",sep=""))}
+
+### Chart MOD Rate by classCat
+DF_Plot = DF_ClassCat[order(DF_ClassCat$MOD.CountPerYr, decreasing=TRUE),]
+#### plot
+PLOT_CCMODCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-MOD.CountPerYr), y=MOD.CountPerYr)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
+  labs(title="Average Annual MOD Count per Equip by Class-Category") +
+  xlab("Class-Category") +
+  ylab("Count / Machine / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
+rm(DF_Plot)
+PLOT_CCMODCount
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCMODCount.png",sep=""))}
+
+### Chart MOD hours by EAMS ID
+DF_Plot = DF_Equip[order(DF_Equip$MOD.Hours, decreasing=TRUE),]
+DF_Plot <- transform(DF_Plot, MOD.Hours = (MOD.Hours/nrow(DF_Year)))
+##### plot
+PLOT_EQMODHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-MOD.Hours), y=MOD.Hours)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
+  labs(title="Average Annual MOD Hours by EAMS ID") +
+  xlab("EAMS ID") +
+  ylab("Hours / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
+rm(DF_Plot)
+PLOT_EQMODHours
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQMODHours.png",sep=""))}
+
+### Chart MOD Hours per Year by classCat
+DF_Plot = DF_ClassCat[order(DF_ClassCat$MOD.HoursPerYr, decreasing=TRUE),]
+#### plot
+PLOT_CCMODHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-MOD.CountPerYr), y=MOD.CountPerYr)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
+  labs(title="Average Annual MOD Hours per Equip by Class-Category") +
+  xlab("Class-Category") +
+  ylab("Hours / Machine / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
+rm(DF_Plot)
+PLOT_CCMODHours
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCMODHours.png",sep=""))}
+
+### Chart MOD cost by EAMS ID
+DF_Plot = DF_Equip[order(DF_Equip$MOD.Cost, decreasing=TRUE),]
+DF_Plot <- transform(DF_Plot, MOD.Cost = (MOD.Cost/nrow(DF_Year)))
+##### plot
+PLOT_EQMODCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-MOD.Cost), y=MOD.Cost)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA), labels=scales::dollar_format()) +
+  labs(title="Average Annual MOD Cost by EAMS ID") +
+  xlab("EAMS ID") +
+  ylab("Cost / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
+rm(DF_Plot)
+PLOT_EQMODCost
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQMODCost.png",sep=""))}
+
+### Chart MOD Cost per Year by classCat
+DF_Plot = DF_ClassCat[order(DF_ClassCat$MOD.CostPerYr, decreasing=TRUE),]
+#### plot
+PLOT_CCMODCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-MOD.CostPerYr), y=MOD.CostPerYr)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA), labels=scales::dollar_format()) +
+  labs(title="Average Annual MOD Cost per Equip by Class-Category") +
+  xlab("Class-Category") +
+  ylab("Cost / Machine / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
+rm(DF_Plot)
+PLOT_CCMODCost
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCMODCost.png",sep=""))}
 
 ### Chart PM count by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$PM.Count, decreasing=TRUE),]
 DF_Plot <- transform(DF_Plot, PM.Count = (PM.Count/nrow(DF_Year)))
 ##### plot
 PLOT_EQPMCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-PM.Count), y=PM.Count)) +
-  geom_bar(stat="identity", fill="darkslategray") +
+  geom_bar(stat="identity", fill="chartreuse4") +
   scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
   labs(title="Average Annual PM Count by EAMS ID") +
   xlab("EAMS ID") +
@@ -687,35 +1239,33 @@ PLOT_EQPMCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-PM.Count),
   theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
   theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
-#### Grab the top 3 EAMS IDs before removing the temporary DF
-LST_TOP3Equip_PM = head(DF_Plot$Object,3)
 rm(DF_Plot)
 PLOT_EQPMCount
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQPMCount.png",sep=""))}
 
 ### Chart PM Rate by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$PM.CountPerYr, decreasing=TRUE),]
 #### plot
 PLOT_CCPMCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-PM.CountPerYr), y=PM.CountPerYr)) +
-  geom_bar(stat="identity", fill="darkslategray") +
+  geom_bar(stat="identity", fill="chartreuse4") +
   scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
-  labs(title="Average Annual PM Count by Class-Category") +
+  labs(title="Average Annual PM Count per Equip by Class-Category") +
   xlab("Class-Category") +
   ylab("Count / Machine / Year") +
   theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
   theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
   theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
-#### Grab the top 3 classcats before removing the temporary DF
-LST_TOP3ClassCat_PM = head(DF_Plot$ClassCategory,3)
 rm(DF_Plot)
 PLOT_CCPMCount
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCPMCount.png",sep=""))}
 
 ### Chart PM Hours by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$PM.Hours, decreasing=TRUE),]
 DF_Plot <- transform(DF_Plot, PM.Hours = (PM.Hours/nrow(DF_Year)))
 ##### plot
 PLOT_EQPMHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-PM.Hours), y=PM.Hours)) +
-  geom_bar(stat="identity", fill="darkslategray") +
+  geom_bar(stat="identity", fill="chartreuse4") +
   scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
   labs(title="Average Annual PM Hours by EAMS ID") +
   xlab("EAMS ID") +
@@ -724,35 +1274,33 @@ PLOT_EQPMHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-PM.Hours),
   theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
   theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
-#### Grab the top 3 EAMS IDs before removing the temporary DF
-LST_TOP3Equip_PM = head(DF_Plot$Object,3)
 rm(DF_Plot)
 PLOT_EQPMHours
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQPMHours.png",sep=""))}
 
 ### Chart PM Hours Rate by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$PM.HoursPerYr, decreasing=TRUE),]
 #### plot
 PLOT_CCPMHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-PM.HoursPerYr), y=PM.HoursPerYr)) +
-  geom_bar(stat="identity", fill="darkslategray") +
+  geom_bar(stat="identity", fill="chartreuse4") +
   scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
-  labs(title="Average Annual PM Hours by Class-Category") +
+  labs(title="Average Annual PM Hours per Equip by Class-Category") +
   xlab("Class-Category") +
   ylab("Hours / Machine / Year") +
   theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
   theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
   theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
-#### Grab the top 3 classcats before removing the temporary DF
-LST_TOP3ClassCat_PM = head(DF_Plot$ClassCategory,3)
 rm(DF_Plot)
 PLOT_CCPMHours
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCPMHours.png",sep=""))}
 
 ### Chart PM Cost by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$PM.Cost, decreasing=TRUE),]
 DF_Plot <- transform(DF_Plot, PM.Cost = (PM.Cost/nrow(DF_Year)))
 ##### plot
 PLOT_EQPMCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-PM.Cost), y=PM.Cost)) +
-  geom_bar(stat="identity", fill="darkslategray") +
+  geom_bar(stat="identity", fill="chartreuse4") +
   scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA), labels=scales::dollar_format()) +
   labs(title="Average Annual PM Cost by EAMS ID") +
   xlab("EAMS ID") +
@@ -761,28 +1309,450 @@ PLOT_EQPMCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-PM.Cost), y
   theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
   theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
-#### Grab the top 3 EAMS IDs before removing the temporary DF
-LST_TOP3Equip_PM = head(DF_Plot$Object,3)
 rm(DF_Plot)
 PLOT_EQPMCost
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQPMCost.png",sep=""))}
 
 ### Chart PM Cost Rate by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$PM.CostPerYr, decreasing=TRUE),]
 #### plot
 PLOT_CCPMCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-PM.CostPerYr), y=PM.CostPerYr)) +
-  geom_bar(stat="identity", fill="darkslategray") +
+  geom_bar(stat="identity", fill="chartreuse4") +
   scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA), labels=scales::dollar_format()) +
-  labs(title="Average Annual PM Cost by Class-Category") +
+  labs(title="Average Annual PM Cost per Equip by Class-Category") +
   xlab("Class-Category") +
   ylab("Cost / Machine / Year") +
   theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
   theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
   theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
-#### Grab the top 3 classcats before removing the temporary DF
-LST_TOP3ClassCat_PM = head(DF_Plot$ClassCategory,3)
 rm(DF_Plot)
 PLOT_CCPMCost
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCPMCost.png",sep=""))}
+
+### Chart CAL count by EAMS ID
+DF_Plot = DF_Equip[order(DF_Equip$CAL.Count, decreasing=TRUE),]
+DF_Plot <- transform(DF_Plot, CAL.Count = (CAL.Count/nrow(DF_Year)))
+##### plot
+PLOT_EQCALCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-CAL.Count), y=CAL.Count)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
+  labs(title="Average Annual CAL Count by EAMS ID") +
+  xlab("EAMS ID") +
+  ylab("Count / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
+rm(DF_Plot)
+PLOT_EQCALCount
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQCALCount.png",sep=""))}
+
+### Chart CAL Rate by classCat
+DF_Plot = DF_ClassCat[order(DF_ClassCat$CAL.CountPerYr, decreasing=TRUE),]
+#### plot
+PLOT_CCCALCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-CAL.CountPerYr), y=CAL.CountPerYr)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
+  labs(title="Average Annual CAL Count per Equip by Class-Category") +
+  xlab("Class-Category") +
+  ylab("Count / Machine / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
+rm(DF_Plot)
+PLOT_CCCALCount
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCCALCount.png",sep=""))}
+
+### Chart CAL Hours by EAMS ID
+DF_Plot = DF_Equip[order(DF_Equip$CAL.Hours, decreasing=TRUE),]
+DF_Plot <- transform(DF_Plot, CAL.Hours = (CAL.Hours/nrow(DF_Year)))
+##### plot
+PLOT_EQCALHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-CAL.Hours), y=CAL.Hours)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
+  labs(title="Average Annual CAL Hours by EAMS ID") +
+  xlab("EAMS ID") +
+  ylab("Hours / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
+rm(DF_Plot)
+PLOT_EQCALHours
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQCALHours.png",sep=""))}
+
+### Chart CAL Hours Rate by classCat
+DF_Plot = DF_ClassCat[order(DF_ClassCat$CAL.HoursPerYr, decreasing=TRUE),]
+#### plot
+PLOT_CCCALHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-CAL.HoursPerYr), y=CAL.HoursPerYr)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
+  labs(title="Average Annual CAL Hours per Equip by Class-Category") +
+  xlab("Class-Category") +
+  ylab("Hours / Machine / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
+rm(DF_Plot)
+PLOT_CCCALHours
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCCALHours.png",sep=""))}
+
+### Chart CAL Cost by EAMS ID
+DF_Plot = DF_Equip[order(DF_Equip$CAL.Cost, decreasing=TRUE),]
+DF_Plot <- transform(DF_Plot, CAL.Cost = (CAL.Cost/nrow(DF_Year)))
+##### plot
+PLOT_EQCALCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-CAL.Cost), y=CAL.Cost)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA), labels=scales::dollar_format()) +
+  labs(title="Average Annual CAL Cost by EAMS ID") +
+  xlab("EAMS ID") +
+  ylab("Cost / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
+rm(DF_Plot)
+PLOT_EQCALCost
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQCALCost.png",sep=""))}
+
+### Chart CAL Cost Rate by classCat
+DF_Plot = DF_ClassCat[order(DF_ClassCat$CAL.CostPerYr, decreasing=TRUE),]
+#### plot
+PLOT_CCCALCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-CAL.CostPerYr), y=CAL.CostPerYr)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA), labels=scales::dollar_format()) +
+  labs(title="Average Annual CAL Cost per Equip by Class-Category") +
+  xlab("Class-Category") +
+  ylab("Cost / Machine / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
+rm(DF_Plot)
+PLOT_CCCALCost
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCCALCost.png",sep=""))}
+
+### Chart FAIL count by EAMS ID
+DF_Plot = DF_Equip[order(DF_Equip$FAIL.Count, decreasing=TRUE),]
+DF_Plot <- transform(DF_Plot, FAIL.Count = (FAIL.Count/nrow(DF_Year)))
+##### plot
+PLOT_EQFAILCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-FAIL.Count), y=FAIL.Count)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
+  labs(title="Average Annual Failure Count by EAMS ID") +
+  xlab("EAMS ID") +
+  ylab("Count / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
+#### Grab the top 3 EAMS IDs before removing the temporary DF
+LST_TOP3Equip_FAIL = head(DF_Plot$Object,3)
+rm(DF_Plot)
+PLOT_EQFAILCount
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQFAILCount.png",sep=""))}
+
+### Chart FAIL Rate by classCat
+DF_Plot = DF_ClassCat[order(DF_ClassCat$FAIL.CountPerYr, decreasing=TRUE),]
+#### plot
+PLOT_CCFAILCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-FAIL.CountPerYr), y=FAIL.CountPerYr)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
+  labs(title="Average Annual Failure Count per Equip by Class-Category") +
+  xlab("Class-Category") +
+  ylab("Count / Machine / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
+#### Grab the top 3 classcats before removing the temporary DF
+LST_TOP3ClassCat_FAIL = head(DF_Plot$ClassCategory,3)
+rm(DF_Plot)
+PLOT_CCFAILCount
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCFAILCount.png",sep=""))}
+
+### Chart FAIL Hours by EAMS ID
+DF_Plot = DF_Equip[order(DF_Equip$FAIL.Hours, decreasing=TRUE),]
+DF_Plot <- transform(DF_Plot, FAIL.Hours = (FAIL.Hours/nrow(DF_Year)))
+##### plot
+PLOT_EQFAILHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-FAIL.Hours), y=FAIL.Hours)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
+  labs(title="Average Annual Failure Hours by EAMS ID") +
+  xlab("EAMS ID") +
+  ylab("Hours / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
+rm(DF_Plot)
+PLOT_EQFAILHours
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQFAILHours.png",sep=""))}
+
+### Chart FAIL Hours Rate by classCat
+DF_Plot = DF_ClassCat[order(DF_ClassCat$FAIL.HoursPerYr, decreasing=TRUE),]
+#### plot
+PLOT_CCFAILHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-FAIL.HoursPerYr), y=FAIL.HoursPerYr)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
+  labs(title="Average Annual Failure Hours per Equip by Class-Category") +
+  xlab("Class-Category") +
+  ylab("Hours / Machine / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
+rm(DF_Plot)
+PLOT_CCFAILHours
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCFAILHours.png",sep=""))}
+
+### Chart FAIL Cost by EAMS ID
+DF_Plot = DF_Equip[order(DF_Equip$FAIL.Cost, decreasing=TRUE),]
+DF_Plot <- transform(DF_Plot, FAIL.Cost = (FAIL.Cost/nrow(DF_Year)))
+##### plot
+PLOT_EQFAILCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-FAIL.Cost), y=FAIL.Cost)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA), labels=scales::dollar_format()) +
+  labs(title="Average Annual Failure Cost by EAMS ID") +
+  xlab("EAMS ID") +
+  ylab("Cost / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
+rm(DF_Plot)
+PLOT_EQFAILCost
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQFAILCost.png",sep=""))}
+
+### Chart FAIL Cost Rate by classCat
+DF_Plot = DF_ClassCat[order(DF_ClassCat$FAIL.CostPerYr, decreasing=TRUE),]
+#### plot
+PLOT_CCFAILCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-FAIL.CostPerYr), y=FAIL.CostPerYr)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA), labels=scales::dollar_format()) +
+  labs(title="Average Annual Failure Cost per Equip by Class-Category") +
+  xlab("Class-Category") +
+  ylab("Cost / Machine / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
+rm(DF_Plot)
+PLOT_CCFAILCost
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCFAILCost.png",sep=""))}
+
+### Chart Urgent COR count by EAMS ID
+DF_Plot = DF_Equip[order(DF_Equip$Urgent.Count, decreasing=TRUE),]
+DF_Plot <- transform(DF_Plot, Urgent.Count = (Urgent.Count/nrow(DF_Year)))
+##### plot
+PLOT_EQUrgentCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-Urgent.Count), y=Urgent.Count)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
+  labs(title="Average Annual Urgent Failure Count by EAMS ID") +
+  xlab("EAMS ID") +
+  ylab("Count / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
+rm(DF_Plot)
+PLOT_EQUrgentCount
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQUrgentCount.png",sep=""))}
+
+### Chart Urgent COR Rate by classCat
+DF_Plot = DF_ClassCat[order(DF_ClassCat$Urgent.CountPerYr, decreasing=TRUE),]
+#### plot
+PLOT_CCUrgentCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-Urgent.CountPerYr), y=Urgent.CountPerYr)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
+  labs(title="Average Annual Urgent Failure Count per Equip by Class-Category") +
+  xlab("Class-Category") +
+  ylab("Count / Machine / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
+rm(DF_Plot)
+PLOT_CCUrgentCount
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCUrgentCount.png",sep=""))}
+
+### Chart Urgent Hours by EAMS ID
+DF_Plot = DF_Equip[order(DF_Equip$FAIL.Hours, decreasing=TRUE),]
+DF_Plot <- transform(DF_Plot, Urgent.Hours = (Urgent.Hours/nrow(DF_Year)))
+##### plot
+PLOT_EQUrgentHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-Urgent.Hours), y=Urgent.Hours)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
+  labs(title="Average Annual Urgent Failuure Hours by EAMS ID") +
+  xlab("EAMS ID") +
+  ylab("Hours / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
+rm(DF_Plot)
+PLOT_EQUrgentHours
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQUrgentHours.png",sep=""))}
+
+### Chart Urgent Hours Rate by classCat
+DF_Plot = DF_ClassCat[order(DF_ClassCat$Urgent.HoursPerYr, decreasing=TRUE),]
+#### plot
+PLOT_CCUrgentHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-Urgent.HoursPerYr), y=Urgent.HoursPerYr)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
+  labs(title="Average Annual Urgent Failure Hours per Equip by Class-Category") +
+  xlab("Class-Category") +
+  ylab("Hours / Machine / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
+rm(DF_Plot)
+PLOT_CCUrgentHours
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCUrgentHours.png",sep=""))}
+
+### Chart Urgent Cost by EAMS ID
+DF_Plot = DF_Equip[order(DF_Equip$Urgent.Cost, decreasing=TRUE),]
+DF_Plot <- transform(DF_Plot, Urgent.Cost = (Urgent.Cost/nrow(DF_Year)))
+##### plot
+PLOT_EQUrgentCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-Urgent.Cost), y=Urgent.Cost)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA), labels=scales::dollar_format()) +
+  labs(title="Average Annual Urgent Failure Cost by EAMS ID") +
+  xlab("EAMS ID") +
+  ylab("Cost / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
+rm(DF_Plot)
+PLOT_EQUrgentCost
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQUrgentCost.png",sep=""))}
+
+### Chart Urgent Cost Rate by classCat
+DF_Plot = DF_ClassCat[order(DF_ClassCat$Urgent.CostPerYr, decreasing=TRUE),]
+#### plot
+PLOT_CCUrgentCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-Urgent.CostPerYr), y=Urgent.CostPerYr)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA), labels=scales::dollar_format()) +
+  labs(title="Average Annual Urgent Failure Cost per Equip by Class-Category") +
+  xlab("Class-Category") +
+  ylab("Cost / Machine / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
+rm(DF_Plot)
+PLOT_CCUrgentCost
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCUrgentCost.png",sep=""))}
+
+### Chart Serious COR count by EAMS ID
+DF_Plot = DF_Equip[order(DF_Equip$Serious.Count, decreasing=TRUE),]
+DF_Plot <- transform(DF_Plot, Serious.Count = (Serious.Count/nrow(DF_Year)))
+##### plot
+PLOT_EQSeriousCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-Serious.Count), y=Serious.Count)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
+  labs(title="Average Annual Serious WO Count by EAMS ID") +
+  xlab("EAMS ID") +
+  ylab("Count / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
+rm(DF_Plot)
+PLOT_EQSeriousCount
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQSeriousCount.png",sep=""))}
+
+### Chart Serious COR Rate by classCat
+DF_Plot = DF_ClassCat[order(DF_ClassCat$Serious.CountPerYr, decreasing=TRUE),]
+#### plot
+PLOT_CCSeriousCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-Serious.CountPerYr), y=Serious.CountPerYr)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
+  labs(title="Average Annual Serious WO Count by Class-Category") +
+  xlab("Class-Category") +
+  ylab("Count / Machine / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
+rm(DF_Plot)
+PLOT_CCSeriousCount
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCSeriousCount.png",sep=""))}
+
+### Chart Serious Hours by EAMS ID
+DF_Plot = DF_Equip[order(DF_Equip$FAIL.Hours, decreasing=TRUE),]
+DF_Plot <- transform(DF_Plot, Serious.Hours = (Serious.Hours/nrow(DF_Year)))
+##### plot
+PLOT_EQSeriousHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-Serious.Hours), y=Serious.Hours)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
+  labs(title="Average Annual Serious Failuure Hours by EAMS ID") +
+  xlab("EAMS ID") +
+  ylab("Hours / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
+rm(DF_Plot)
+PLOT_EQSeriousHours
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQSeriousHours.png",sep=""))}
+
+### Chart Serious Hours Rate by classCat
+DF_Plot = DF_ClassCat[order(DF_ClassCat$Serious.HoursPerYr, decreasing=TRUE),]
+#### plot
+PLOT_CCSeriousHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-Serious.HoursPerYr), y=Serious.HoursPerYr)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
+  labs(title="Average Annual Serious Failure Hours per Equip by Class-Category") +
+  xlab("Class-Category") +
+  ylab("Hours / Machine / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
+rm(DF_Plot)
+PLOT_CCSeriousHours
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCSeriousHours.png",sep=""))}
+
+### Chart Serious Cost by EAMS ID
+DF_Plot = DF_Equip[order(DF_Equip$Serious.Cost, decreasing=TRUE),]
+DF_Plot <- transform(DF_Plot, Serious.Cost = (Serious.Cost/nrow(DF_Year)))
+##### plot
+PLOT_EQSeriousCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-Serious.Cost), y=Serious.Cost)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA), labels=scales::dollar_format()) +
+  labs(title="Average Annual Serious Failure Cost by EAMS ID") +
+  xlab("EAMS ID") +
+  ylab("Cost / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
+rm(DF_Plot)
+PLOT_EQSeriousCost
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQSeriousCost.png",sep=""))}
+
+### Chart Serious Cost Rate by classCat
+DF_Plot = DF_ClassCat[order(DF_ClassCat$Serious.CostPerYr, decreasing=TRUE),]
+#### plot
+PLOT_CCSeriousCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-Serious.CostPerYr), y=Serious.CostPerYr)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA), labels=scales::dollar_format()) +
+  labs(title="Average Annual Serious Failure Cost per Equip by Class-Category") +
+  xlab("Class-Category") +
+  ylab("Cost / Machine / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
+rm(DF_Plot)
+PLOT_CCSeriousCost
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCSeriousCost.png",sep=""))}
 
 
 ## COR WO Priority Distribution
@@ -824,9 +1794,9 @@ DF_Plot <- rbind(DF_Priority, DF_temp)
 rm(DF_temp)
 
 ### Plot the priorites
-PLOT_EQPRI <- ggplot(data=DF_Plot, aes(x=Priority, y=(COR.Count.Annual), fill=forcats::fct_rev(Range))) +
+PLOT_EQPriority <- ggplot(data=DF_Plot, aes(x=Priority, y=(COR.Count.Annual), fill=forcats::fct_rev(Range))) +
   geom_bar(stat="identity", position="dodge") +
-  scale_fill_manual(name="Year Range", values=c('chartreuse4', 'darkslategray')) +
+  scale_fill_manual(name="Year Range", values=c('darkblue', 'chartreuse4')) +
   scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
   geom_text(aes(label=scales::percent(COR.Perc, accuracy = 1)), position=position_dodge(width=.9), vjust=1.5, color='white') +
   labs(title="Average Annual Count of COR WO by Priority") +
@@ -837,74 +1807,8 @@ PLOT_EQPRI <- ggplot(data=DF_Plot, aes(x=Priority, y=(COR.Count.Annual), fill=fo
   theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
   theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
-PLOT_EQPRI
-
-### Chart Urgent COR count by EAMS ID
-DF_Plot = DF_Equip[order(DF_Equip$Urgent.Count, decreasing=TRUE),]
-DF_Plot <- transform(DF_Plot, Urgent.Count = (Urgent.Count/nrow(DF_Year)))
-##### plot
-PLOT_EQUrgentCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-Urgent.Count), y=Urgent.Count)) +
-  geom_bar(stat="identity", fill="darkslategray") +
-  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
-  labs(title="Average Annual Urgent WO Count by EAMS ID") +
-  xlab("EAMS ID") +
-  ylab("Count / Year") +
-  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
-  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
-  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
-  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
-rm(DF_Plot)
-PLOT_EQUrgentCount
-
-### Chart Urgent COR Rate by classCat
-DF_Plot = DF_ClassCat[order(DF_ClassCat$Urgent.CountPerYr, decreasing=TRUE),]
-#### plot
-PLOT_CCUrgentCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-Urgent.CountPerYr), y=Urgent.CountPerYr)) +
-  geom_bar(stat="identity", fill="darkslategray") +
-  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
-  labs(title="Average Annual Urgent WO Count by Class-Category") +
-  xlab("Class-Category") +
-  ylab("Count / Machine / Year") +
-  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
-  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
-  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
-  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
-rm(DF_Plot)
-PLOT_CCUrgentCount
-
-### Chart Serious COR count by EAMS ID
-DF_Plot = DF_Equip[order(DF_Equip$Serious.Count, decreasing=TRUE),]
-DF_Plot <- transform(DF_Plot, Serious.Count = (Serious.Count/nrow(DF_Year)))
-##### plot
-PLOT_EQSeriousCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-Serious.Count), y=Serious.Count)) +
-  geom_bar(stat="identity", fill="darkslategray") +
-  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
-  labs(title="Average Annual Serious WO Count by EAMS ID") +
-  xlab("EAMS ID") +
-  ylab("Count / Year") +
-  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
-  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
-  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
-  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
-rm(DF_Plot)
-PLOT_EQSeriousCount
-
-### Chart Seriouss COR Rate by classCat
-DF_Plot = DF_ClassCat[order(DF_ClassCat$Serious.CountPerYr, decreasing=TRUE),]
-#### plot
-PLOT_CCSeriousCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-Serious.CountPerYr), y=Serious.CountPerYr)) +
-  geom_bar(stat="identity", fill="darkslategray") +
-  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
-  labs(title="Average Annual Serious WO Count by Class-Category") +
-  xlab("Class-Category") +
-  ylab("Count / Machine / Year") +
-  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
-  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
-  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
-  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
-rm(DF_Plot)
-PLOT_CCSeriousCount
-
+PLOT_EQPriority
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQPriority.png",sep=""))}
 
 ## Time to completion
 
@@ -925,10 +1829,10 @@ DF_Priority$Avg.Span <- round(DF_Priority$Avg.Span, 1)
 rm(DF_temp)
 #### plot
 PLOT_PriSpan <- ggplot(data=head(DF_Priority), aes(x=Priority, y=Avg.Span)) +
-  geom_bar(stat="identity", fill="darkslategray") +
+  geom_bar(stat="identity", fill="chartreuse4") +
   scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
   geom_text(aes(label=Avg.Span), position=position_dodge(width=.9), vjust=-.5, color='black') +
-  labs(title="Average Days to Complete by Priority") +
+  labs(title="Average COR Days to Complete by Priority") +
   xlab("Priority") +
   ylab("Days") +
   theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
@@ -936,6 +1840,7 @@ PLOT_PriSpan <- ggplot(data=head(DF_Priority), aes(x=Priority, y=Avg.Span)) +
   theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 PLOT_PriSpan
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/PriSpan.png",sep=""))}
 
 ### Collect span by reliability rank
 DF_temp <- DF_WO[DF_WO$WO.Type=="COR", ] %>%
@@ -960,10 +1865,10 @@ DF_ReliRank$Span.PM <- DF_temp$avg[match(DF_ReliRank$Reliability.Ranking, DF_tem
 
 ### Plot span vs RRank for Urgent COR
 PLOT_UrgentSpanRank <- ggplot(data=head(DF_ReliRank), aes(x=reorder(Reliability.Ranking,-Value), y=Span.Urgent)) +
-  geom_bar(stat="identity", fill="darkslategray") +
+  geom_bar(stat="identity", fill="chartreuse4") +
   scale_y_continuous(expand = expansion(mult = c(.05, .05)), limits = c(NA, NA)) +
   geom_text(aes(label=ifelse(Span.Urgent==0,'',Span.Urgent)), position=position_dodge(width=.9), vjust=ifelse(DF_ReliRank$Span.Urgent<0,-0.5,1.5), color='white') +
-  labs(title="Average Days to Complete on Urgent COR WO by Reliability Rank") +
+  labs(title="Average Days to Complete Urgent COR WO by Reliability Rank") +
   xlab("Reliability Rank") +
   ylab("Days") +
   theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
@@ -971,13 +1876,14 @@ PLOT_UrgentSpanRank <- ggplot(data=head(DF_ReliRank), aes(x=reorder(Reliability.
   theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 PLOT_UrgentSpanRank
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/UrgentSpanRank.png",sep=""))}
 
 ### Plot span vs RRank for Routine COR
 PLOT_RoutineSpanRank <- ggplot(data=head(DF_ReliRank), aes(x=reorder(Reliability.Ranking,-Value), y=Span.Routine)) +
-  geom_bar(stat="identity", fill="darkslategray") +
+  geom_bar(stat="identity", fill="chartreuse4") +
   scale_y_continuous(expand = expansion(mult = c(.05, .05)), limits = c(NA, NA)) +
   geom_text(aes(label=ifelse(Span.Routine==0,'',Span.Routine)), position=position_dodge(width=.9), vjust=ifelse(DF_ReliRank$Span.Routine<0,-0.5,1.5), color='white') +
-  labs(title="Average Days to Complete on Routine COR WO by Reliability Rank") +
+  labs(title="Average Days to Complete Routine COR WO by Reliability Rank") +
   xlab("Reliability Rank") +
   ylab("Days") +
   theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
@@ -985,13 +1891,14 @@ PLOT_RoutineSpanRank <- ggplot(data=head(DF_ReliRank), aes(x=reorder(Reliability
   theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 PLOT_RoutineSpanRank
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/RoutineSpanRank.png",sep=""))}
 
 ### Plot span vs RRank for PM 
 PLOT_PMSpanRank <- ggplot(data=head(DF_ReliRank), aes(x=reorder(Reliability.Ranking,-Value), y=Span.PM)) +
-  geom_bar(stat="identity", fill="darkslategray") +
+  geom_bar(stat="identity", fill="chartreuse4") +
   scale_y_continuous(expand = expansion(mult = c(.05, .05)), limits = c(NA, NA)) +
   geom_text(aes(label=ifelse(Span.PM==0,'',Span.PM)), position=position_dodge(width=.9), vjust=ifelse(DF_ReliRank$Span.PM<0,-0.5,1.5), color='white') +
-  labs(title="Average Days Overdue on PM WO by Reliability Rank") +
+  labs(title="Average Days Overdue PM WO by Reliability Rank") +
   xlab("Reliability Rank") +
   ylab("Days") +
   theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
@@ -999,15 +1906,16 @@ PLOT_PMSpanRank <- ggplot(data=head(DF_ReliRank), aes(x=reorder(Reliability.Rank
   theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 PLOT_PMSpanRank
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/PMSpanRank.png",sep=""))}
 
 ### Chart Downtime hours by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$DT.Sum, decreasing=TRUE),]
 DF_Plot <- transform(DF_Plot, DT.Sum = (DT.Sum/nrow(DF_Year)))
 ##### plot
 PLOT_EQDowntime<- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-DT.Sum), y=DT.Sum)) +
-  geom_bar(stat="identity", fill="darkslategray") +
+  geom_bar(stat="identity", fill="chartreuse4") +
   scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
-  labs(title="Average Annual Downtime Hours by EAMS ID") +
+  labs(title="Average Annual Failure Downtime Hours by EAMS ID") +
   xlab("EAMS ID") +
   ylab("Hours / Year") +
   theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
@@ -1016,14 +1924,15 @@ PLOT_EQDowntime<- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-DT.Sum), y
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_EQDowntime
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQDowntime.png",sep=""))}
 
 ### Chart Downtime hours by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$WO.DTPerYr, decreasing=TRUE),]
 #### plot
 PLOT_CCDowntime <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-WO.DTPerYr), y=WO.DTPerYr)) +
-  geom_bar(stat="identity", fill="darkslategray") +
+  geom_bar(stat="identity", fill="chartreuse4") +
   scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
-  labs(title="Average Annual Downtime Hours by Class-Category") +
+  labs(title="Average Annual Failure Downtime Hours per Equip by Class-Category") +
   xlab("Class-Category") +
   ylab("Hours / Machine / Year") +
   theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
@@ -1032,19 +1941,20 @@ PLOT_CCDowntime <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-WO
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_CCDowntime
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCDowntime.png",sep=""))}
 
 
 ## Failure Coding
 
-### Failure Mode Code distribution
+### Failure Mode Code distribution on Failure work orders
 #### Temp DF to hold Failure Mode data
-DF_Plot <- DF_WO[DF_WO$WO.Type=="COR" & !is.na(DF_WO$Failure.Mode),] %>%
+DF_Plot <- DF_WO[(DF_WO$WO.Type=="COR" | DF_WO$WO.Type=="MOD") & (DF_WO$Impact!="NOFAIL") & !is.na(DF_WO$Failure.Mode),] %>%
   group_by(Failure.Mode) %>%
   summarise(n = n())
 DF_Plot <- transform(DF_Plot, CodePerYear = round(n/nrow(DF_Year),0))
 #### Plot Failure Mode
 PLOT_FailMode<- ggplot(data=head(DF_Plot,20), aes(x=reorder(Failure.Mode,-n), y=CodePerYear)) +
-  geom_bar(stat="identity", fill="darkslategray") +
+  geom_bar(stat="identity", fill="chartreuse4") +
   scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
   labs(title="Top Failure Mode Codes on COR WOs") +
   xlab("Failure Mode") +
@@ -1055,16 +1965,17 @@ PLOT_FailMode<- ggplot(data=head(DF_Plot,20), aes(x=reorder(Failure.Mode,-n), y=
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_FailMode
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/FailMode.png",sep=""))}
 
-### Cause Code distribution
+### Cause Code distribution on Failure work orders
 #### Temp DF to hold Cause data
-DF_Plot <- DF_WO[DF_WO$WO.Type=="COR" & !is.na(DF_WO$Cause.Code),] %>%
+DF_Plot <- DF_WO[(DF_WO$WO.Type=="COR" | DF_WO$WO.Type=="MOD") & (DF_WO$Impact!="NOFAIL") & !is.na(DF_WO$Cause.Code),] %>%
   group_by(Cause.Code) %>%
   summarise(n = n())
 DF_Plot <- transform(DF_Plot, CodePerYear = round(n/nrow(DF_Year),0))
 #### Plot Cause Code
 PLOT_CauseCode<- ggplot(data=head(DF_Plot,20), aes(x=reorder(Cause.Code,-n), y=CodePerYear)) +
-  geom_bar(stat="identity", fill="darkslategray") +
+  geom_bar(stat="identity", fill="chartreuse4") +
   scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
   labs(title="Top Cause Codes on COR WOs") +
   xlab("Cause Code") +
@@ -1075,16 +1986,17 @@ PLOT_CauseCode<- ggplot(data=head(DF_Plot,20), aes(x=reorder(Cause.Code,-n), y=C
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_CauseCode
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CauseCode.png",sep=""))}
 
-### Action Code distribution
+### Action Code distribution on Failure work orders
 #### Temp DF to hold Action data
-DF_Plot <- DF_WO[DF_WO$WO.Type=="COR" & !is.na(DF_WO$Action.Code),] %>%
+DF_Plot <- DF_WO[(DF_WO$WO.Type=="COR" | DF_WO$WO.Type=="MOD") & (DF_WO$Impact!="NOFAIL") & !is.na(DF_WO$Action.Code),] %>%
   group_by(Action.Code) %>%
   summarise(n = n())
 DF_Plot <- transform(DF_Plot, CodePerYear = round(n/nrow(DF_Year),0))
 #### Plot Action Code
 PLOT_ActionCode<- ggplot(data=head(DF_Plot,20), aes(x=reorder(Action.Code,-n), y=CodePerYear)) +
-  geom_bar(stat="identity", fill="darkslategray") +
+  geom_bar(stat="identity", fill="chartreuse4") +
   scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
   labs(title="Top Action Codes on COR WOs") +
   xlab("Action Code") +
@@ -1095,6 +2007,7 @@ PLOT_ActionCode<- ggplot(data=head(DF_Plot,20), aes(x=reorder(Action.Code,-n), y
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_ActionCode
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/ActionCode.png",sep=""))}
 
 
 ## WO Type Distributions
@@ -1111,12 +2024,15 @@ DF_Plot <- DF_Plot %>% arrange(desc(WO.Type)) %>% mutate(prop = n / sum(DF_Plot$
 PLOT_TypePie <- ggplot(data=DF_Plot, aes(x="", y=prop, fill=WO.Type)) +
   geom_bar(stat="identity", width=5, color="black") +
   coord_polar("y", start=0) +
-  theme_void() +
-  #theme(legend.position="none") +
-  geom_text(aes(y=ypos, label=percent), color="black", size=6) +
-  scale_fill_brewer(palette="Spectral", direction =-1)
+  geom_text(aes(y=ypos, label=percent), color="cornsilk", size=6) +
+  scale_fill_brewer(palette="Spectral", direction =-1) +
+  scale_fill_hue(l=40, c=35) +
+  labs(title="EAMS WO Type Distribution") +
+  theme(axis.text=element_blank(), axis.ticks=element_blank(),panel.grid=element_blank(), axis.title=element_blank()) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold"))
 rm(DF_Plot)
 PLOT_TypePie
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/TypePie.png",sep=""))}
 
 ### Chart of GRP-designated work types
 ##### Create a concatenation of Type and SubType
@@ -1171,87 +2087,63 @@ DF_Plot <- DF_temp %>% arrange(desc(TypeCat)) %>% mutate(prop = n / sum(DF_temp$
 PLOT_TypeCatPie <- ggplot(data=DF_Plot, aes(x="", y=prop, fill=TypeCat)) +
   geom_bar(stat="identity", width=5, color="black") +
   coord_polar("y", start=0) +
-  theme_void() +
-  #geom_col(color="black") +
-  geom_text(aes(y=ypos, label=percent), color="black", size=6) +
-  scale_fill_brewer(palette="Spectral", direction=-1)
-rm(DF_Plot)
+  geom_text(aes(y=ypos, label=percent), color="cornsilk", size=6) +
+  scale_fill_brewer(palette="Spectral", direction=-1) +
+  scale_fill_hue(l=40, c=35) +
+  labs(title="GRP WO Type Distribution") +
+  theme(axis.text=element_blank(), axis.ticks=element_blank(),panel.grid=element_blank(), axis.title=element_blank()) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold"))
+rm(DF_Plot, DF_temp)
 PLOT_TypeCatPie
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/TypeCatPie.png",sep=""))}
 
 
-## PM Distributions
+## Trend Top3 groups for failures
 
-### Chart PM count by EAMS ID
-DF_Plot = DF_Equip[order(DF_Equip$PM.Count, decreasing=TRUE),]
-DF_Plot <- transform(DF_Plot, PM.Count = (PM.Count/nrow(DF_Year)))
-##### plot
-PLOT_EQPMCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-PM.Count), y=PM.Count)) +
-  geom_bar(stat="identity", fill="darkslategray") +
+### Trend COR Rate by EAMS ID by Year for top 3 IDs
+DF_Plot <- DF_EqYearType[DF_EqYearType$Object.Code %in% LST_TOP3Equip_FAIL,]
+DF_Plot <- DF_Plot[(DF_WO$WO.Type=="COR" | DF_WO$WO.Type=="MOD") & (DF_WO$Impact!="NOFAIL"),]
+DF_Plot <- DF_Plot %>%
+  group_by(Object.Code, Complete.Year) %>%
+  summarise(sum = sum(WO.Count.Annual))
+DF_Plot <- subset(DF_Plot, !is.na(DF_Plot$Object.Code))
+### Plot on a line graph
+PLOT_TOP3Equip_FAIL <- ggplot(data=DF_Plot, aes(x=Complete.Year, y=sum, color=Object.Code)) +
+  geom_line(linewidth=1.5) +
+  scale_color_manual(values=c('chartreuse4', 'firebrick4', 'darkblue')) +
   scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
-  labs(title="Average Annual PM Count by EAMS ID") +
-  xlab("EAMS ID") +
-  ylab("Count / Year") +
-  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
-  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
-  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
-  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
-rm(DF_Plot)
-PLOT_EQPMCount
-  
-### Chart PM Rate by classCat
-DF_Plot = DF_ClassCat[order(DF_ClassCat$PM.CountPerYr, decreasing=TRUE),]
-#### plot
-PLOT_CCPMCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-PM.CountPerYr), y=PM.CountPerYr)) +
-  geom_bar(stat="identity", fill="darkslategray") +
-  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
-  labs(title="Average Annual PM Count by Class-Category") +
-  xlab("Class-Category") +
-  ylab("Count / Machine / Year") +
+  labs(title="Corrective WO Count by Year for Top 3 EAMS IDs") +
+  xlab("Year") +
+  ylab("Count") +
+  guides(color = guide_legend(reverse=T)) +
   theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
   theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
   theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
-PLOT_CCPMCount
+PLOT_TOP3Equip_FAIL
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/TOP3Equip_FAIL.png",sep=""))}
 
-### Chart PM hours by EAMS ID
-DF_Plot = DF_Equip[order(DF_Equip$PM.Hours, decreasing=TRUE),]
-DF_Plot <- transform(DF_Plot, PM.Hours = (PM.Hours/nrow(DF_Year)))
-##### plot
-PLOT_EQPMHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-PM.Hours), y=PM.Hours)) +
-  geom_bar(stat="identity", fill="darkslategray") +
+### Trend COR Rate by classCat by Year for top 3 classCats
+DF_Plot <- DF_CCYearType[DF_CCYearType$ClassCategory %in% LST_TOP3ClassCat_FAIL,]
+DF_Plot <- DF_Plot[(DF_WO$WO.Type=="COR" | DF_WO$WO.Type=="MOD") & (DF_WO$Impact!="NOFAIL"),]
+DF_Plot <- DF_Plot %>%
+  group_by(ClassCategory, Complete.Year) %>%
+  summarise(avg = mean(WO.Count.Rate))
+DF_Plot <- subset(DF_Plot, !is.na(DF_Plot$ClassCategory))
+### Plot on a line graph
+PLOT_TOP3ClassCat_FAIL <- ggplot(data=DF_Plot, aes(x=Complete.Year, y=avg, color=ClassCategory)) +
+  geom_line(linewidth=1.5) +
+  scale_color_manual(values=c('chartreuse4', 'firebrick4', 'darkblue')) +
   scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
-  labs(title="Average Annual PM Hours by EAMS ID") +
-  xlab("EAMS ID") +
-  ylab("Hours / Year") +
-  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
-  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
-  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
-  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
-rm(DF_Plot)
-PLOT_EQPMHours
-
-### Chart PM Hours per Year by classCat
-DF_Plot = DF_ClassCat[order(DF_ClassCat$PM.HoursPerYr, decreasing=TRUE),]
-#### plot
-PLOT_CCPMHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-PM.HoursPerYr), y=PM.HoursPerYr)) +
-  geom_bar(stat="identity", fill="darkslategray") +
-  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
-  labs(title="Average Annual PM Hours by Class-Category") +
-  xlab("Class-Category") +
-  ylab("Hours / Machine / Year") +
-  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  labs(title="Corrective WO Count per Equip by Year for Top 3 Class-Categories") +
+  xlab("Year") +
+  ylab("Count") +
+  guides(color = guide_legend(reverse=T))
+theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
   theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
   theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
-PLOT_CCPMHours
-
-
-## Export Plots
-### Commented out so that they don't export automatically - remove comments to run
-
-#VAR_plots.dir.path <- list.files(tempdir(), pattern="rs-graphics", full.names = TRUE) 
-#LST_plots.png.paths <- list.files(VAR_plots.dir.path, pattern=".png", full.names = TRUE)
-#file.copy(from=LST_plots.png.paths, to="C:/Users/rapelak/R Projects/Dept QuickAsses/Plots")
-
+PLOT_TOP3ClassCat_FAIL
+if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/TOP3ClassCat_FAIL.png",sep=""))}
