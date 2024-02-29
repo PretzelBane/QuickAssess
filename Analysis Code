@@ -2147,3 +2147,66 @@ theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
 rm(DF_Plot)
 PLOT_TOP3ClassCat_FAIL
 if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/TOP3ClassCat_FAIL.png",sep=""))}
+
+
+## Build reseach dataframs for export
+
+### Build a consolidated WO DF
+DF_WOCon <- DF_WO
+DF_WOCon$TypeSubtype <- NULL
+#### Re-order & Re-name existing columns
+LST_colOrder <- c("WO..", "Description.wo", "WO.Type", "WO.Sub.type", "Scheduling.Group", "Priority", "Reported.Date", "Created.Date", "Original.Due.Date", "Complete.Date", "Complete.Year", "WO.Span", "Task", "Hours.Worked", "Total.Cost", "Failure.Mode", "Cause.Code", "Action.Code", "Impact", "DowntimeHours", "Object.Code", "Description.equip", "Class", "Category", "ClassCategory", "Manufacturer", "Model", "Reliability.Ranking", "Commission.Date")
+LST_newNames <- c("WO", "Description", "Type", "Sub-Type", "SchdGroup", "Priority", "ReportedDate", "CreatedDate", "PMDueDate", "CompleteDate", "CompleteYear", "Span", "Task", "Hours", "Cost", "FailureMode", "CauseCode", "ActionCode", "Impact", "Downtime", "EAMSID", "EquipDescription", "Class", "Category", "ClassCat", "Manufacturer", "Model", "RRank", "CommissionDate")
+DF_WOCon <- DF_WOCon[, LST_colOrder]
+colnames(DF_WOCon) <- c(LST_newNames)
+### Add skill codes from all activities in one concatenated field
+#### Create a temp table with WO# and concatenated skill codes
+DF_temp <- DF_Activity %>%
+  select(WO.., Skill.Code) %>%
+  group_by(WO..) %>%
+  mutate(Craft = paste0(Skill.Code, collapse=", ")) %>%
+  distinct(WO.., Craft, .keep_all = TRUE)
+#### Transfer to consolidated WO DF
+DF_WOCon$Crafts <- DF_temp$Craft[match(DF_WOCon$WO, DF_temp$WO..)]
+rm(DF_temp)
+### Add wo comments as one concatenated field
+DF_temp <- DF_Comment %>%
+  select(WO.Number, Comment) %>%
+  group_by(WO.Number) %>%
+  mutate(Text = paste0(Comment, collapse="; ")) %>%
+  distinct(WO.Number, Text, .keep_all = TRUE)
+#### Transfer to consolidated WO DF
+DF_WOCon$Comments <- DF_temp$Text[match(DF_WOCon$WO, DF_temp$WO.Number)]
+rm(DF_temp)
+
+### Make a subset of the consolidated WOs just for failures
+DF_WOCon_FAIL <- DF_WOCon[(DF_WOCon$Type=="COR" | DF_WOCon$Type=="MOD") & (DF_WOCon$Impact!="NOFAIL"),]
+
+
+### Build a consolidated Equip DF
+DF_EQCon <- DF_Equip
+DF_EQCon$RRankScore <- NULL
+#### Re-order & Re-name existing columns
+LST_colOrder <- c("Object", "Description.Equip", "Class", "Category", "ClassCategory", "Manufacturer", "Model", "Reliability.Ranking", "Commission.Date", "Age", "PID", "var2", "var4", "Parent", "WO.Count", "WO.Hours", "WO.Cost", "COR.Count", "COR.Hours", "COR.Cost", "MOD.Count", "MOD.Hours", "MOD.Cost", "PM.Count", "PM.Hours", "PM.Cost", "CAL.Count", "CAL.Hours", "CAL.Cost", "FAIL.Count", "FAIL.Hours", "FAIL.Cost", "Urgent.Count", "Urgent.Hours", "Urgent.Cost", "Serious.Count", "Serious.Hours", "Serious.Cost", "DT.Sum")
+LST_newNames <- c("EAMSID", "Description", "Class", "Category", "ClassCategory", "Manufacturer", "Model", "RRank", "CommissionDate", "Age", "PID", "Var2", "Var4", "ParentID", "WO_Count", "WO_Hours", "WO_Cost", "COR_Count", "COR_Hours", "COR_Cost", "MOD_Count", "MOD_Hours", "MOD_Cost", "PM_Count", "PM_Hours", "PM_Cost", "CAL_Count", "CAL_Hours", "CAL_Cost", "Failure_Count", "Failure_Hours", "Failure_Cost", "Urgent_Count", "Urgent_Hours", "Urgent_Cost", "Serious_Count", "Serious_Hours", "Serious_Cost", "DowntimeTotal")
+DF_EQCon <- DF_EQCon[, LST_colOrder]
+colnames(DF_EQCon) <- c(LST_newNames)
+### Add associated items as one concatenated field
+DF_temp <- DF_Item
+DF_temp <- transform(DF_temp, ItemInfo = paste0(DF_temp$Item.No., ": ", DF_temp$Description, " (Qty - ", DF_temp$Quantity, ")"))
+DF_temp <- DF_temp %>%
+  select(Object, ItemInfo) %>%
+  group_by(Object) %>%
+  mutate(Text = paste0(ItemInfo, collapse="; ")) %>%
+  distinct(Object, Text, .keep_all = TRUE)
+#### Transfer to consolidated WO DF
+DF_EQCon$AssociatedItems <- DF_temp$Text[match(DF_EQCon$EAMSID, DF_temp$Object)]
+rm(DF_temp)
+
+### Build a consolidated ClassCat DF
+DF_CCCon <- DF_ClassCat[1:55]
+LST_ColOrder <- c("ClassCategory", "Class", "Category", "Count", "AvgAge", "AvgRRank", "WO.Count", "WO.Hours", "WO.Cost", "COR.Count", "COR.Hours", "COR.Cost", "MOD.Count", "MOD.Hours", "MOD.Cost", "PM.Count", "PM.Hours", "PM.Cost", "CAL.Count", "CAL.Hours", "CAL.Cost", "FAIL.Count", "FAIL.Hours", "FAIL.Cost", "Urgent.Count", "Urgent.Hours", "Urgent.Cost", "Serious.Count", "Serious.Hours", "Serious.Cost", "WO.DT")
+LST_newNames <- c("ClassCategory", "Class", "Category", "Count", "AvgAge", "AvgRRank", "WO_Count", "WO_Hours", "WO_Cost", "COR_Count", "COR_Hours", "COR_Cost", "MOD_Count", "MOD_Hours", "MOD_Cost", "PM_Count", "PM_Hours", "PM_Cost", "CAL_Count", "CAL_Hours", "CAL_Cost", "FAIL_Count", "FAIL_Hours", "FAIL_Cost", "Urgent_Count", "Urgent_Hours", "Urgent_Cost", "Serious_Count", "Serious_Hours", "Serious_Cost", "DowntimeTotal")
+DF_CCCon <- DF_CCCon[, LST_ColOrder]
+colnames(DF_CCCon) <- c(LST_newNames)
+
