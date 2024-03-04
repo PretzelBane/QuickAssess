@@ -3,7 +3,8 @@
 
 
 ## load and install packages as necessary
-LST_packages <- c("readxl", "writexl", "tidyverse", "ggplot2", "ggmosaic", "qcc", "dplyr", "data.table")
+#LST_packages <- c("readxl", "openxlsx", "tidyverse", "ggplot2", "ggmosaic", "qcc", "dplyr", "data.table")
+LST_packages <- c("readxl", "openxlsx", "tidyverse", "ggplot2", "dplyr")
 installed_packages <- LST_packages %in% rownames(installed.packages())
 if (any(installed_packages == FALSE)) {
   install.packages(LST_packages[!installed_packages])
@@ -11,39 +12,51 @@ if (any(installed_packages == FALSE)) {
 invisible(lapply(LST_packages, library, character.only = TRUE))
 
 
-## Set user-defined variables
+## SET USER-DEFINED VARIABLES
 ### Set parameters to specify filename
+#### Set and Range differentiate the input/output run; filenames will be appended with them
 VAR_set = "FD"
 VAR_range = "2019-2023"
+#### Main director is where the input file is located and the output folder will be created
+VAR_mainDir = "C:/Users/rapelak/R Projects/QuickAsses"
+#### Do not include Set and Range or file extension on the filename variables - they will be added automatically
+#### Note that the actual input file must be the below variable plus the Set and Range, seperated by spaces
+VAR_inputFilename = "QuickAssess Input"
+VAR_outputFilename = "QuickAssess Output"
 ### Set this to TRUE if you want to save output to folder
-FLAG_save = FALSE
+#### Leave it as false to run without saving results
+FLAG_save = TRUE
 
 
-## Import Data from BO QuickAccess report for FD
-### dept, range, and sheets are from the standardized filename and sheet format of the Excel file that contains the BO output of QuickAccess report
-### Set string to contain sheet names to loop through
+## Input / Output Prep
+#### Set path variables
+VAR_inputFullFilename = paste0(VAR_inputFilename, " ", VAR_set, " ", VAR_range, ".xlsx", sep="")
+VAR_outputFullFilename = paste0(VAR_outputFilename, " ", VAR_set, " ", VAR_range, ".xlsx", sep="")
+VAR_inputPath = paste0(VAR_mainDir, "/", VAR_inputFullFilename, sep="")
+VAR_outputDir = paste0(VAR_mainDir, "/Output ",VAR_set, " ",VAR_range, sep="")
+VAR_outputPath = paste0(VAR_outputDir, "/", VAR_outputFullFilename, sep="")
+### Import Data from the Excel file containing the Business Objects output
+#### dept, range, and sheets are from the standardized filename and sheet format of the Excel file that contains the BO output of QuickAccess report
+#### Set string to contain sheet names to loop through
 LST_sheets <- c("Equip", "Doc", "Item", "WOPM", "WOCOR", "ActivityPM", "ActivityCOR", "CommentPM", "CommentCOR")
-### Import Each Sheet
-#### Loop through sheets and import one dataframe for each, named after the sheet
+#### Import Each Sheet
+##### Loop through sheets and import one dataframe for each, named after the sheet
 for (i_sheet in LST_sheets) {
-  DF_Import <- read_excel(paste("C:/Users/rapelak/R Projects/Dept QuickAsses/QuickAssess BO Output ",VAR_set," ",VAR_range,".xlsx", sep = ""), sheet = i_sheet)
+  DF_Import <- read_excel(VAR_inputPath, sheet = i_sheet)
   assign(paste("DF_",i_sheet,sep=''),data.frame(DF_Import))
   rm(DF_Import)
 }
 rm(i_sheet)
-
-
-## Output Prep
-### Create a directory for the output plots
+### Output Directory creation
+#### Create a directory for the output plots
 if (FLAG_save) {
-  VAR_OutputPath = paste("C:/Users/rapelak/R Projects/Dept QuickAsses/Output Plots ",VAR_set, " ",VAR_range, sep="")
-  if (!dir.exists(VAR_OutputPath)){
-    dir.create(VAR_OutputPath)
+  if (!dir.exists(VAR_outputDir)){
+    dir.create(VAR_outputDir)
   }
 }
 
-## Cleanup
 
+## Cleanup
 #### Stitch COR & PM versions of WO, Activity, Comment together
 DF_WO <- rbind(DF_WOPM, DF_WOCOR)
 DF_Activity <- rbind(DF_ActivityPM, DF_ActivityCOR)
@@ -129,7 +142,6 @@ PLOT_EQComp <- ggplot(data=DF_Equip.Compliance, aes(x=reorder(LST_Names,-LST_Ord
   theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 PLOT_EQComp
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQComp.png",sep=""))}
 ### Chart work order metrics
 PLOT_WOComp <- ggplot(data=DF_WO.Compliance, aes(x=reorder(LST_Names,-LST_Order), y=LST_Metrics)) +
   geom_bar(stat="identity", fill="chartreuse4") +
@@ -146,7 +158,6 @@ PLOT_WOComp <- ggplot(data=DF_WO.Compliance, aes(x=reorder(LST_Names,-LST_Order)
   theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 PLOT_WOComp
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/WOComp.png",sep=""))}
 
 ## Equipment - Classification
 
@@ -179,7 +190,6 @@ PLOT_IDCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-Count
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_IDCount
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/IDCount.png",sep=""))}
 
 
 ## Equipment - Reliability Rank
@@ -205,7 +215,6 @@ PLOT_RRCount <- ggplot(data=DF_ReliRank, aes(x=reorder(Reliability.Ranking, -Val
   theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 PLOT_RRCount
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/RRCount.png",sep=""))}
 
 ### Chart average reliability rank by class-category
 #### Add a RRankScore column to the Equipment DF
@@ -231,7 +240,6 @@ PLOT_RRankAvg <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-AvgR
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_RRankAvg
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/RRankAvg.png",sep=""))}
 
 
 ## Equipment - Age
@@ -260,7 +268,6 @@ PLOT_AgeAvg <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-AvgAge
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_AgeAvg
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/AgeAvg.png",sep=""))}
 
 
 ## Work Order Preparation
@@ -684,7 +691,6 @@ PLOT_WOTrend <- ggplot(data=DF_Plot, aes(x=Year, y=Dev, color=Trend)) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 PLOT_WOTrend
 rm(DF_Plot)
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/WOTrend.png",sep=""))}
 
 ### Plot for COR WOs
 #### Grab the pertinent data for plotting
@@ -712,7 +718,6 @@ PLOT_CORTrend <- ggplot(data=DF_Plot, aes(x=Year, y=Dev, color=Trend)) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 PLOT_CORTrend
 rm(DF_Plot)
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CORTrend.png",sep=""))}
 
 ### Plot for MOD WOs
 #### Grab the pertinent data for plotting
@@ -740,7 +745,6 @@ PLOT_MODTrend <- ggplot(data=DF_Plot, aes(x=Year, y=Dev, color=Trend)) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 PLOT_MODTrend
 rm(DF_Plot)
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/MODTrend.png",sep=""))}
 
 ### Plot for PM WOs
 #### Grab the pertinent data for plotting
@@ -768,7 +772,6 @@ PLOT_PMTrend <- ggplot(data=DF_Plot, aes(x=Year, y=Dev, color=Trend)) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 PLOT_PMTrend
 rm(DF_Plot)
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/PMTrend.png",sep=""))}
 
 ### Plot for CAL WOs
 #### Grab the pertinent data for plotting
@@ -796,7 +799,6 @@ PLOT_CALTrend <- ggplot(data=DF_Plot, aes(x=Year, y=Dev, color=Trend)) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 PLOT_CALTrend
 rm(DF_Plot)
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CALTrend.png",sep=""))}
 
 ### Plot for FAIL WOs
 #### Grab the pertinent data for plotting
@@ -824,7 +826,6 @@ PLOT_FAILTrend <- ggplot(data=DF_Plot, aes(x=Year, y=Dev, color=Trend)) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 PLOT_FAILTrend
 rm(DF_Plot)
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/FAILTrend.png",sep=""))}
 
 ### Plot for Serious WOs
 #### Grab the pertinent data for plotting
@@ -852,7 +853,6 @@ PLOT_SERIOUSTrend <- ggplot(data=DF_Plot, aes(x=Year, y=Dev, color=Trend)) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 PLOT_SERIOUSTrend
 rm(DF_Plot)
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/SERIOUSTrend.png",sep=""))}
 
 ### Plot for Urgent WOs
 #### Grab the pertinent data for plotting
@@ -880,7 +880,6 @@ PLOT_URGENTTrend <- ggplot(data=DF_Plot, aes(x=Year, y=Dev, color=Trend)) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 PLOT_URGENTTrend
 rm(DF_Plot)
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/URGENTTrend.png",sep=""))}
 
 
 ## Plot downtime trend
@@ -905,7 +904,6 @@ PLOT_DTTrend <- ggplot(data=DF_Plot, aes(x=Complete.Year, y=sum)) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 PLOT_DTTrend
 rm(DF_Plot)
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/DTTrend.png",sep=""))}
 
 
 ## Corrective Work Order Count/Hours/Cost Rate (per equip) Distribution for WO Types
@@ -926,7 +924,6 @@ PLOT_EQWOCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-WO.Count),
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_EQWOCount
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQWOCount.png",sep=""))}
 
 ### Chart All WO Rate by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$WO.CountPerYr, decreasing=TRUE),]
@@ -943,7 +940,6 @@ PLOT_CCWOCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-WO.
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_CCWOCount
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCWOCount.png",sep=""))}
 
 ### Chart all WO hours by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$WO.Hours, decreasing=TRUE),]
@@ -961,7 +957,6 @@ PLOT_EQWOHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-WO.Hours),
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_EQWOHours
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQWOHours.png",sep=""))}
 
 ### Chart all WO Hours per Year by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$WO.HoursPerYr, decreasing=TRUE),]
@@ -978,7 +973,6 @@ PLOT_CCWOHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-WO.
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_CCWOHours
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCWOHours.png",sep=""))}
 
 ### Chart all WO cost by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$WO.Cost, decreasing=TRUE),]
@@ -996,7 +990,6 @@ PLOT_EQWOCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-WO.Cost), y
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_EQWOCost
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQWOCost.png",sep=""))}
 
 ### Chart all WO Cost per Year by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$WO.CostPerYr, decreasing=TRUE),]
@@ -1013,7 +1006,6 @@ PLOT_CCWOCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-WO.C
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_CCWOCost
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCWOCost.png",sep=""))}
 
 ### Chart COR count by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$COR.Count, decreasing=TRUE),]
@@ -1031,7 +1023,6 @@ PLOT_EQCORCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-COR.Count
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_EQCORCount
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQCORCount.png",sep=""))}
 
 ### Chart COR Rate by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$COR.CountPerYr, decreasing=TRUE),]
@@ -1048,7 +1039,6 @@ PLOT_CCCORCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-CO
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_CCCORCount
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCCORCount.png",sep=""))}
 
 ### Chart COR hours by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$COR.Hours, decreasing=TRUE),]
@@ -1066,7 +1056,6 @@ PLOT_EQCORHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-COR.Hours
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_EQCORHours
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQCORHours.png",sep=""))}
 
 ### Chart COR Hours per Year by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$COR.HoursPerYr, decreasing=TRUE),]
@@ -1083,7 +1072,6 @@ PLOT_CCCORHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-CO
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_CCCORHours
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCCORHours.png",sep=""))}
 
 ### Chart COR cost by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$COR.Cost, decreasing=TRUE),]
@@ -1101,7 +1089,6 @@ PLOT_EQCORCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-COR.Cost),
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_EQCORCost
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQCORCost.png",sep=""))}
 
 ### Chart COR Cost per Year by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$COR.CostPerYr, decreasing=TRUE),]
@@ -1118,7 +1105,6 @@ PLOT_CCCORCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-COR
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_CCCORCost
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCCORCost.png",sep=""))}
 
 ### Chart MOD count by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$MOD.Count, decreasing=TRUE),]
@@ -1136,7 +1122,6 @@ PLOT_EQMODCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-MOD.Count
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_EQMODCount
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQMODCount.png",sep=""))}
 
 ### Chart MOD Rate by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$MOD.CountPerYr, decreasing=TRUE),]
@@ -1153,7 +1138,6 @@ PLOT_CCMODCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-MO
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_CCMODCount
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCMODCount.png",sep=""))}
 
 ### Chart MOD hours by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$MOD.Hours, decreasing=TRUE),]
@@ -1171,7 +1155,6 @@ PLOT_EQMODHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-MOD.Hours
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_EQMODHours
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQMODHours.png",sep=""))}
 
 ### Chart MOD Hours per Year by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$MOD.HoursPerYr, decreasing=TRUE),]
@@ -1188,7 +1171,6 @@ PLOT_CCMODHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-MO
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_CCMODHours
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCMODHours.png",sep=""))}
 
 ### Chart MOD cost by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$MOD.Cost, decreasing=TRUE),]
@@ -1206,7 +1188,6 @@ PLOT_EQMODCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-MOD.Cost),
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_EQMODCost
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQMODCost.png",sep=""))}
 
 ### Chart MOD Cost per Year by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$MOD.CostPerYr, decreasing=TRUE),]
@@ -1223,7 +1204,6 @@ PLOT_CCMODCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-MOD
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_CCMODCost
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCMODCost.png",sep=""))}
 
 ### Chart PM count by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$PM.Count, decreasing=TRUE),]
@@ -1241,7 +1221,6 @@ PLOT_EQPMCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-PM.Count),
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_EQPMCount
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQPMCount.png",sep=""))}
 
 ### Chart PM Rate by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$PM.CountPerYr, decreasing=TRUE),]
@@ -1258,7 +1237,6 @@ PLOT_CCPMCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-PM.
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_CCPMCount
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCPMCount.png",sep=""))}
 
 ### Chart PM Hours by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$PM.Hours, decreasing=TRUE),]
@@ -1276,7 +1254,6 @@ PLOT_EQPMHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-PM.Hours),
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_EQPMHours
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQPMHours.png",sep=""))}
 
 ### Chart PM Hours Rate by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$PM.HoursPerYr, decreasing=TRUE),]
@@ -1293,7 +1270,6 @@ PLOT_CCPMHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-PM.
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_CCPMHours
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCPMHours.png",sep=""))}
 
 ### Chart PM Cost by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$PM.Cost, decreasing=TRUE),]
@@ -1311,7 +1287,6 @@ PLOT_EQPMCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-PM.Cost), y
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_EQPMCost
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQPMCost.png",sep=""))}
 
 ### Chart PM Cost Rate by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$PM.CostPerYr, decreasing=TRUE),]
@@ -1328,7 +1303,6 @@ PLOT_CCPMCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-PM.C
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_CCPMCost
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCPMCost.png",sep=""))}
 
 ### Chart CAL count by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$CAL.Count, decreasing=TRUE),]
@@ -1346,7 +1320,6 @@ PLOT_EQCALCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-CAL.Count
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_EQCALCount
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQCALCount.png",sep=""))}
 
 ### Chart CAL Rate by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$CAL.CountPerYr, decreasing=TRUE),]
@@ -1363,7 +1336,6 @@ PLOT_CCCALCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-CA
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_CCCALCount
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCCALCount.png",sep=""))}
 
 ### Chart CAL Hours by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$CAL.Hours, decreasing=TRUE),]
@@ -1381,7 +1353,6 @@ PLOT_EQCALHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-CAL.Hours
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_EQCALHours
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQCALHours.png",sep=""))}
 
 ### Chart CAL Hours Rate by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$CAL.HoursPerYr, decreasing=TRUE),]
@@ -1398,7 +1369,6 @@ PLOT_CCCALHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-CA
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_CCCALHours
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCCALHours.png",sep=""))}
 
 ### Chart CAL Cost by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$CAL.Cost, decreasing=TRUE),]
@@ -1416,7 +1386,6 @@ PLOT_EQCALCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-CAL.Cost),
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_EQCALCost
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQCALCost.png",sep=""))}
 
 ### Chart CAL Cost Rate by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$CAL.CostPerYr, decreasing=TRUE),]
@@ -1433,7 +1402,6 @@ PLOT_CCCALCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-CAL
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_CCCALCost
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCCALCost.png",sep=""))}
 
 ### Chart FAIL count by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$FAIL.Count, decreasing=TRUE),]
@@ -1453,7 +1421,6 @@ PLOT_EQFAILCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-FAIL.Cou
 LST_TOP3Equip_FAIL = head(DF_Plot$Object,3)
 rm(DF_Plot)
 PLOT_EQFAILCount
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQFAILCount.png",sep=""))}
 
 ### Chart FAIL Rate by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$FAIL.CountPerYr, decreasing=TRUE),]
@@ -1472,7 +1439,6 @@ PLOT_CCFAILCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-F
 LST_TOP3ClassCat_FAIL = head(DF_Plot$ClassCategory,3)
 rm(DF_Plot)
 PLOT_CCFAILCount
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCFAILCount.png",sep=""))}
 
 ### Chart FAIL Hours by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$FAIL.Hours, decreasing=TRUE),]
@@ -1490,7 +1456,6 @@ PLOT_EQFAILHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-FAIL.Hou
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_EQFAILHours
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQFAILHours.png",sep=""))}
 
 ### Chart FAIL Hours Rate by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$FAIL.HoursPerYr, decreasing=TRUE),]
@@ -1507,7 +1472,6 @@ PLOT_CCFAILHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-F
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_CCFAILHours
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCFAILHours.png",sep=""))}
 
 ### Chart FAIL Cost by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$FAIL.Cost, decreasing=TRUE),]
@@ -1525,7 +1489,6 @@ PLOT_EQFAILCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-FAIL.Cost
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_EQFAILCost
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQFAILCost.png",sep=""))}
 
 ### Chart FAIL Cost Rate by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$FAIL.CostPerYr, decreasing=TRUE),]
@@ -1542,7 +1505,6 @@ PLOT_CCFAILCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-FA
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_CCFAILCost
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCFAILCost.png",sep=""))}
 
 ### Chart Urgent COR count by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$Urgent.Count, decreasing=TRUE),]
@@ -1560,7 +1522,6 @@ PLOT_EQUrgentCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-Urgent
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_EQUrgentCount
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQUrgentCount.png",sep=""))}
 
 ### Chart Urgent COR Rate by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$Urgent.CountPerYr, decreasing=TRUE),]
@@ -1577,7 +1538,6 @@ PLOT_CCUrgentCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_CCUrgentCount
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCUrgentCount.png",sep=""))}
 
 ### Chart Urgent Hours by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$FAIL.Hours, decreasing=TRUE),]
@@ -1595,7 +1555,6 @@ PLOT_EQUrgentHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-Urgent
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_EQUrgentHours
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQUrgentHours.png",sep=""))}
 
 ### Chart Urgent Hours Rate by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$Urgent.HoursPerYr, decreasing=TRUE),]
@@ -1612,7 +1571,6 @@ PLOT_CCUrgentHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_CCUrgentHours
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCUrgentHours.png",sep=""))}
 
 ### Chart Urgent Cost by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$Urgent.Cost, decreasing=TRUE),]
@@ -1630,7 +1588,6 @@ PLOT_EQUrgentCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-Urgent.
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_EQUrgentCost
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQUrgentCost.png",sep=""))}
 
 ### Chart Urgent Cost Rate by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$Urgent.CostPerYr, decreasing=TRUE),]
@@ -1647,7 +1604,6 @@ PLOT_CCUrgentCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_CCUrgentCost
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCUrgentCost.png",sep=""))}
 
 ### Chart Serious COR count by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$Serious.Count, decreasing=TRUE),]
@@ -1665,7 +1621,6 @@ PLOT_EQSeriousCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-Serio
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_EQSeriousCount
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQSeriousCount.png",sep=""))}
 
 ### Chart Serious COR Rate by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$Serious.CountPerYr, decreasing=TRUE),]
@@ -1682,7 +1637,6 @@ PLOT_CCSeriousCount <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_CCSeriousCount
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCSeriousCount.png",sep=""))}
 
 ### Chart Serious Hours by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$FAIL.Hours, decreasing=TRUE),]
@@ -1700,7 +1654,6 @@ PLOT_EQSeriousHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-Serio
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_EQSeriousHours
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQSeriousHours.png",sep=""))}
 
 ### Chart Serious Hours Rate by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$Serious.HoursPerYr, decreasing=TRUE),]
@@ -1717,7 +1670,6 @@ PLOT_CCSeriousHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_CCSeriousHours
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCSeriousHours.png",sep=""))}
 
 ### Chart Serious Cost by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$Serious.Cost, decreasing=TRUE),]
@@ -1735,7 +1687,6 @@ PLOT_EQSeriousCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-Seriou
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_EQSeriousCost
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQSeriousCost.png",sep=""))}
 
 ### Chart Serious Cost Rate by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$Serious.CostPerYr, decreasing=TRUE),]
@@ -1752,7 +1703,6 @@ PLOT_CCSeriousCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_CCSeriousCost
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCSeriousCost.png",sep=""))}
 
 
 ## COR WO Priority Distribution
@@ -1808,7 +1758,6 @@ PLOT_EQPriority <- ggplot(data=DF_Plot, aes(x=Priority, y=(COR.Count.Annual), fi
   theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 PLOT_EQPriority
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQPriority.png",sep=""))}
 
 ## Time to completion
 
@@ -1840,7 +1789,6 @@ PLOT_PriSpan <- ggplot(data=head(DF_Priority), aes(x=Priority, y=Avg.Span)) +
   theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 PLOT_PriSpan
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/PriSpan.png",sep=""))}
 
 ### Collect span by reliability rank
 DF_temp <- DF_WO[DF_WO$WO.Type=="COR", ] %>%
@@ -1876,7 +1824,6 @@ PLOT_UrgentSpanRank <- ggplot(data=head(DF_ReliRank), aes(x=reorder(Reliability.
   theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 PLOT_UrgentSpanRank
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/UrgentSpanRank.png",sep=""))}
 
 ### Plot span vs RRank for Routine COR
 PLOT_RoutineSpanRank <- ggplot(data=head(DF_ReliRank), aes(x=reorder(Reliability.Ranking,-Value), y=Span.Routine)) +
@@ -1891,7 +1838,6 @@ PLOT_RoutineSpanRank <- ggplot(data=head(DF_ReliRank), aes(x=reorder(Reliability
   theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 PLOT_RoutineSpanRank
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/RoutineSpanRank.png",sep=""))}
 
 ### Plot span vs RRank for PM 
 PLOT_PMSpanRank <- ggplot(data=head(DF_ReliRank), aes(x=reorder(Reliability.Ranking,-Value), y=Span.PM)) +
@@ -1906,7 +1852,6 @@ PLOT_PMSpanRank <- ggplot(data=head(DF_ReliRank), aes(x=reorder(Reliability.Rank
   theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 PLOT_PMSpanRank
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/PMSpanRank.png",sep=""))}
 
 ### Chart Downtime hours by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$DT.Sum, decreasing=TRUE),]
@@ -1924,7 +1869,6 @@ PLOT_EQDowntime<- ggplot(data=head(DF_Plot,20), aes(x=reorder(Object,-DT.Sum), y
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_EQDowntime
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/EQDowntime.png",sep=""))}
 
 ### Chart Downtime hours by classCat
 DF_Plot = DF_ClassCat[order(DF_ClassCat$WO.DTPerYr, decreasing=TRUE),]
@@ -1941,7 +1885,6 @@ PLOT_CCDowntime <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-WO
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_CCDowntime
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CCDowntime.png",sep=""))}
 
 
 ## Failure Coding
@@ -1965,7 +1908,6 @@ PLOT_FailMode<- ggplot(data=head(DF_Plot,20), aes(x=reorder(Failure.Mode,-n), y=
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_FailMode
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/FailMode.png",sep=""))}
 
 ### Cause Code distribution on Failure work orders
 #### Temp DF to hold Cause data
@@ -1986,7 +1928,6 @@ PLOT_CauseCode<- ggplot(data=head(DF_Plot,20), aes(x=reorder(Cause.Code,-n), y=C
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_CauseCode
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/CauseCode.png",sep=""))}
 
 ### Action Code distribution on Failure work orders
 #### Temp DF to hold Action data
@@ -2007,7 +1948,6 @@ PLOT_ActionCode<- ggplot(data=head(DF_Plot,20), aes(x=reorder(Action.Code,-n), y
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold"))
 rm(DF_Plot)
 PLOT_ActionCode
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/ActionCode.png",sep=""))}
 
 
 ## WO Type Distributions
@@ -2032,7 +1972,6 @@ PLOT_TypePie <- ggplot(data=DF_Plot, aes(x="", y=prop, fill=WO.Type)) +
   theme(plot.title = element_text(color="darkslategray", size=14, face="bold"))
 rm(DF_Plot)
 PLOT_TypePie
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/TypePie.png",sep=""))}
 
 ### Chart of GRP-designated work types
 ##### Create a concatenation of Type and SubType
@@ -2095,7 +2034,6 @@ PLOT_TypeCatPie <- ggplot(data=DF_Plot, aes(x="", y=prop, fill=TypeCat)) +
   theme(plot.title = element_text(color="darkslategray", size=14, face="bold"))
 rm(DF_Plot, DF_temp)
 PLOT_TypeCatPie
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/TypeCatPie.png",sep=""))}
 
 
 ## Trend Top3 groups for failures
@@ -2122,7 +2060,6 @@ PLOT_TOP3Equip_FAIL <- ggplot(data=DF_Plot, aes(x=Complete.Year, y=sum, color=Ob
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_TOP3Equip_FAIL
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/TOP3Equip_FAIL.png",sep=""))}
 
 ### Trend COR Rate by classCat by Year for top 3 classCats
 DF_Plot <- DF_CCYearType[DF_CCYearType$ClassCategory %in% LST_TOP3ClassCat_FAIL,]
@@ -2146,10 +2083,9 @@ theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_TOP3ClassCat_FAIL
-if (FLAG_save) {ggsave(paste(VAR_OutputPath,"/TOP3ClassCat_FAIL.png",sep=""))}
 
 
-## Build reseach dataframs for export
+## Prepare consolidated dataframes
 
 ### Build a consolidated WO DF
 DF_WOCon <- DF_WO
@@ -2173,7 +2109,7 @@ rm(DF_temp)
 DF_temp <- DF_Comment %>%
   select(WO.Number, Comment) %>%
   group_by(WO.Number) %>%
-  mutate(Text = paste0(Comment, collapse="; ")) %>%
+  mutate(Text = paste0(Comment, collapse=";    ")) %>%
   distinct(WO.Number, Text, .keep_all = TRUE)
 #### Transfer to consolidated WO DF
 DF_WOCon$Comments <- DF_temp$Text[match(DF_WOCon$WO, DF_temp$WO.Number)]
@@ -2181,7 +2117,6 @@ rm(DF_temp)
 
 ### Make a subset of the consolidated WOs just for failures
 DF_WOCon_FAIL <- DF_WOCon[(DF_WOCon$Type=="COR" | DF_WOCon$Type=="MOD") & (DF_WOCon$Impact!="NOFAIL"),]
-
 
 ### Build a consolidated Equip DF
 DF_EQCon <- DF_Equip
@@ -2210,3 +2145,202 @@ LST_newNames <- c("ClassCategory", "Class", "Category", "Count", "AvgAge", "AvgR
 DF_CCCon <- DF_CCCon[, LST_ColOrder]
 colnames(DF_CCCon) <- c(LST_newNames)
 
+
+## Export data and plots to Excel
+
+if (FLAG_save) {
+  wb <- createWorkbook()
+  
+  addWorksheet(wb, "DATA_EQUIP")
+  writeData(wb, sheet="DATA_EQUIP", x=DF_EQCon, startRow = 1, startCol = 1, colNames = TRUE)
+  freezePane(wb, "DATA_EQUIP", firstActiveRow = 2, firstActiveCol = 2)
+  
+  addWorksheet(wb, "DATA_CLASSCAT")
+  writeData(wb, sheet="DATA_CLASSCAT", x=DF_CCCon, startRow = 1, startCol = 1, colNames = TRUE)
+  freezePane(wb, "DATA_CLASSCAT", firstActiveRow = 2, firstActiveCol = 2)
+  
+  addWorksheet(wb, "DATA_WO")
+  writeData(wb, sheet="DATA_WO", x=DF_WOCon, startRow = 1, startCol = 1, colNames = TRUE)
+  freezePane(wb, "DATA_WO", firstActiveRow = 2, firstActiveCol = 2)
+  addWorksheet(wb, "DATA_WO_FAIL")
+  
+  writeData(wb, sheet="DATA_WO_FAIL", x=DF_WOCon_FAIL, startRow = 1, startCol = 1, colNames = TRUE)
+  freezePane(wb, "DATA_EQUIP", firstActiveRow = 2, firstActiveCol = 2)
+  
+  addWorksheet(wb, "PLOT_EQUIP")
+  print(PLOT_EQComp)
+  insertPlot(wb, "PLOT_EQUIP", startRow=5, startCol = 2)
+  print(PLOT_IDCount)
+  insertPlot(wb, "PLOT_EQUIP", startRow=25, startCol = 2)
+  print(PLOT_RRCount)
+  insertPlot(wb, "PLOT_EQUIP", startRow=25, startCol = 10)
+  print(PLOT_RRankAvg)
+  insertPlot(wb, "PLOT_EQUIP", startRow=45, startCol = 2)
+  print(PLOT_AgeAvg)
+  insertPlot(wb, "PLOT_EQUIP", startRow=45, startCol = 10)
+  
+  addWorksheet(wb, "PLOT_WO")
+  print(PLOT_WOComp)
+  insertPlot(wb, "PLOT_WO", startRow=5, startCol = 2)
+  print(PLOT_TypePie)
+  insertPlot(wb, "PLOT_WO", startRow=25, startCol = 2)
+  print(PLOT_TypeCatPie)
+  insertPlot(wb, "PLOT_WO", startRow=25, startCol = 10)
+  print(PLOT_EQPriority)
+  insertPlot(wb, "PLOT_WO", startRow=45, startCol = 2)
+  print(PLOT_PriSpan)
+  insertPlot(wb, "PLOT_WO", startRow=45, startCol = 10)
+  print(PLOT_RoutineSpanRank)
+  insertPlot(wb, "PLOT_WO", startRow=65, startCol = 2)
+  print(PLOT_UrgentSpanRank)
+  insertPlot(wb, "PLOT_WO", startRow=65, startCol = 10)
+  print(PLOT_PMSpanRank)
+  insertPlot(wb, "PLOT_WO", startRow=65, startCol = 18)
+  print(PLOT_WOTrend)
+  insertPlot(wb, "PLOT_WO", startRow=85, startCol = 2)
+  print(PLOT_EQWOCount)
+  insertPlot(wb, "PLOT_WO", startRow=105, startCol = 2)
+  print(PLOT_EQWOHours)
+  insertPlot(wb, "PLOT_WO", startRow=105, startCol = 10)
+  print(PLOT_EQWOCost)
+  insertPlot(wb, "PLOT_WO", startRow=105, startCol = 18)
+  print(PLOT_CCWOCount)
+  insertPlot(wb, "PLOT_WO", startRow=125, startCol = 2)
+  print(PLOT_CCWOHours)
+  insertPlot(wb, "PLOT_WO", startRow=125, startCol = 10)
+  print(PLOT_CCWOCost)
+  insertPlot(wb, "PLOT_WO", startRow=125, startCol = 18)
+  
+  addWorksheet(wb, "PLOT_COR")
+  print(PLOT_CORTrend)
+  insertPlot(wb, "PLOT_COR", startRow=5, startCol = 2)
+  print(PLOT_EQCORCount)
+  insertPlot(wb, "PLOT_COR", startRow=25, startCol = 2)
+  print(PLOT_EQCORHours)
+  insertPlot(wb, "PLOT_COR", startRow=25, startCol = 10)
+  print(PLOT_EQCORCost)
+  insertPlot(wb, "PLOT_COR", startRow=25, startCol = 18)
+  print(PLOT_CCCORCount)
+  insertPlot(wb, "PLOT_COR", startRow=45, startCol = 2)
+  print(PLOT_CCCORHours)
+  insertPlot(wb, "PLOT_COR", startRow=45, startCol = 10)
+  print(PLOT_CCCORCost)
+  insertPlot(wb, "PLOT_COR", startRow=45, startCol = 18)
+  
+  addWorksheet(wb, "PLOT_MOD")
+  print(PLOT_MODTrend)
+  insertPlot(wb, "PLOT_MOD", startRow=5, startCol = 2)
+  print(PLOT_EQMODCount)
+  insertPlot(wb, "PLOT_MOD", startRow=25, startCol = 2)
+  print(PLOT_EQMODHours)
+  insertPlot(wb, "PLOT_MOD", startRow=25, startCol = 10)
+  print(PLOT_EQMODCost)
+  insertPlot(wb, "PLOT_MOD", startRow=25, startCol = 18)
+  print(PLOT_CCMODCount)
+  insertPlot(wb, "PLOT_MOD", startRow=45, startCol = 2)
+  print(PLOT_CCMODHours)
+  insertPlot(wb, "PLOT_MOD", startRow=45, startCol = 10)
+  print(PLOT_CCMODCost)
+  insertPlot(wb, "PLOT_MOD", startRow=45, startCol = 18)
+  
+  addWorksheet(wb, "PLOT_PM")
+  print(PLOT_PMTrend)
+  insertPlot(wb, "PLOT_PM", startRow=5, startCol = 2)
+  print(PLOT_EQPMCount)
+  insertPlot(wb, "PLOT_PM", startRow=25, startCol = 2)
+  print(PLOT_EQPMHours)
+  insertPlot(wb, "PLOT_PM", startRow=25, startCol = 10)
+  print(PLOT_EQPMCost)
+  insertPlot(wb, "PLOT_PM", startRow=25, startCol = 18)
+  print(PLOT_CCPMCount)
+  insertPlot(wb, "PLOT_PM", startRow=45, startCol = 2)
+  print(PLOT_CCPMHours)
+  insertPlot(wb, "PLOT_PM", startRow=45, startCol = 10)
+  print(PLOT_CCPMCost)
+  insertPlot(wb, "PLOT_PM", startRow=45, startCol = 18)
+  
+  addWorksheet(wb, "PLOT_CAL")
+  print(PLOT_CALTrend)
+  insertPlot(wb, "PLOT_CAL", startRow=5, startCol = 2)
+  print(PLOT_EQCALCount)
+  insertPlot(wb, "PLOT_CAL", startRow=25, startCol = 2)
+  print(PLOT_EQCALHours)
+  insertPlot(wb, "PLOT_CAL", startRow=25, startCol = 10)
+  print(PLOT_EQCALCost)
+  insertPlot(wb, "PLOT_CAL", startRow=25, startCol = 18)
+  print(PLOT_CCCALCount)
+  insertPlot(wb, "PLOT_CAL", startRow=45, startCol = 2)
+  print(PLOT_CCCALHours)
+  insertPlot(wb, "PLOT_CAL", startRow=45, startCol = 10)
+  print(PLOT_CCCALCost)
+  insertPlot(wb, "PLOT_CAL", startRow=45, startCol = 18)
+  
+  addWorksheet(wb, "PLOT_FAIL")
+  print(PLOT_FAILTrend)
+  insertPlot(wb, "PLOT_FAIL", startRow=5, startCol = 2)
+  print(PLOT_EQFAILCount)
+  insertPlot(wb, "PLOT_FAIL", startRow=25, startCol = 2)
+  print(PLOT_EQFAILHours)
+  insertPlot(wb, "PLOT_FAIL", startRow=25, startCol = 10)
+  print(PLOT_EQFAILCost)
+  insertPlot(wb, "PLOT_FAIL", startRow=25, startCol = 18)
+  print(PLOT_CCFAILCount)
+  insertPlot(wb, "PLOT_FAIL", startRow=45, startCol = 2)
+  print(PLOT_CCFAILHours)
+  insertPlot(wb, "PLOT_FAIL", startRow=45, startCol = 10)
+  print(PLOT_CCFAILCost)
+  insertPlot(wb, "PLOT_FAIL", startRow=45, startCol = 18)
+  
+  addWorksheet(wb, "PLOT_FAIL_DEEP")
+  print(PLOT_FailMode)
+  insertPlot(wb, "PLOT_FAIL_DEEP", startRow=5, startCol = 2)
+  print(PLOT_CauseCode)
+  insertPlot(wb, "PLOT_FAIL_DEEP", startRow=5, startCol = 10)
+  print(PLOT_ActionCode)
+  insertPlot(wb, "PLOT_FAIL_DEEP", startRow=5, startCol = 18)
+  print(PLOT_TOP3Equip_FAIL)
+  insertPlot(wb, "PLOT_FAIL_DEEP", startRow=25, startCol = 2)
+  print(PLOT_TOP3ClassCat_FAIL)
+  insertPlot(wb, "PLOT_FAIL_DEEP", startRow=25, startCol = 10)
+  print(PLOT_DTTrend)
+  insertPlot(wb, "PLOT_FAIL_DEEP", startRow=45, startCol = 2)
+  print(PLOT_EQDowntime)
+  insertPlot(wb, "PLOT_FAIL_DEEP", startRow=45, startCol = 10)
+  print(PLOT_CCDowntime)
+  insertPlot(wb, "PLOT_FAIL_DEEP", startRow=45, startCol = 18)
+  print(PLOT_URGENTTrend)
+  insertPlot(wb, "PLOT_FAIL_DEEP", startRow=65, startCol = 2)
+  print(PLOT_EQUrgentCount)
+  insertPlot(wb, "PLOT_FAIL_DEEP", startRow=85, startCol = 2)
+  print(PLOT_EQUrgentHours)
+  insertPlot(wb, "PLOT_FAIL_DEEP", startRow=85, startCol = 10)
+  print(PLOT_EQUrgentCost)
+  insertPlot(wb, "PLOT_FAIL_DEEP", startRow=85, startCol = 18)
+  print(PLOT_CCUrgentCount)
+  insertPlot(wb, "PLOT_FAIL_DEEP", startRow=105, startCol = 2)
+  print(PLOT_CCUrgentHours)
+  insertPlot(wb, "PLOT_FAIL_DEEP", startRow=105, startCol = 10)
+  print(PLOT_CCUrgentCost)
+  insertPlot(wb, "PLOT_FAIL_DEEP", startRow=105, startCol = 18)
+  print(PLOT_SERIOUSTrend)
+  insertPlot(wb, "PLOT_FAIL_DEEP", startRow=125, startCol = 2)
+  print(PLOT_EQSeriousCount)
+  insertPlot(wb, "PLOT_FAIL_DEEP", startRow=145, startCol = 2)
+  print(PLOT_EQSeriousHours)
+  insertPlot(wb, "PLOT_FAIL_DEEP", startRow=145, startCol = 10)
+  print(PLOT_EQSeriousCost)
+  insertPlot(wb, "PLOT_FAIL_DEEP", startRow=145, startCol = 18)
+  print(PLOT_CCSeriousCount)
+  insertPlot(wb, "PLOT_FAIL_DEEP", startRow=165, startCol = 2)
+  print(PLOT_CCSeriousHours)
+  insertPlot(wb, "PLOT_FAIL_DEEP", startRow=165, startCol = 10)
+  print(PLOT_CCSeriousCost)
+  insertPlot(wb, "PLOT_FAIL_DEEP", startRow=165, startCol = 18)
+  
+  ### Save the assembled workbook
+  saveWorkbook(wb, file=VAR_outputPath, overwrite = TRUE)
+
+  ### Move the input file into the output folder
+  file.copy(from = VAR_inputPath, to = paste0(VAR_outputDir, "/", VAR_inputFullFilename))
+  file.remove(VAR_inputPath)
+}
