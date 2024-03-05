@@ -100,7 +100,8 @@ colnames(DF_WO)[colnames(DF_WO)=="Created.Date.Time"] <- "Created.Date"
 VAR_equipCount <- nrow(DF_Equip)
 #### Calc percentages of completeness
 VAR_popClassCat <- (VAR_equipCount - sum(is.na(DF_Equip$Class) | is.na(DF_Equip$Category))) / VAR_equipCount
-VAR_popRank <- (sum(!is.na(DF_Equip$Reliability.Ranking))) / VAR_equipCount
+#VAR_popRank <- (sum(!is.na(DF_Equip$Reliability.Ranking))) / VAR_equipCount
+VAR_popRank <- (sum(DF_Equip$Reliability.Ranking!="BLANK")) / VAR_equipCount
 VAR_popManufMod <- (VAR_equipCount - sum(is.na(DF_Equip$Manufacturer) | is.na(DF_Equip$Model))) / VAR_equipCount
 VAR_popDrawing <- (sum(!is.na(DF_Equip$P.ID.No))) / VAR_equipCount
 VAR_popDoc <- (VAR_equipCount - length(setdiff(DF_Equip$Object, DF_Doc$Object))) / VAR_equipCount
@@ -581,7 +582,10 @@ DF_ClassCat <- transform(DF_ClassCat, Serious.CountPerYr = (Serious.Count/Count)
 DF_ClassCat <- transform(DF_ClassCat, Serious.HoursPerYr = (Serious.Hours/Count)/nrow(DF_Year)) 
 DF_ClassCat <- transform(DF_ClassCat, Serious.CostPerYr = (Serious.Cost/Count)/nrow(DF_Year))
 DF_ClassCat <- transform(DF_ClassCat, WO.DTPerYr = (WO.DT/Count)/nrow(DF_Year))
-
+DF_ClassCat <- transform(DF_ClassCat, CORMOD.TotalCostPerYr = (COR.Cost + MOD.Cost) / nrow(DF_Year))
+DF_ClassCat <- transform(DF_ClassCat, PMCAL.TotalCostPerYr = (PM.Cost + CAL.Cost) / nrow(DF_Year))
+DF_ClassCat <- transform(DF_ClassCat, FAIL.TotalCostPerYr = (FAIL.Cost) / nrow(DF_Year))
+DF_ClassCat <- transform(DF_ClassCat, WO.TotalDTPerYr = (WO.DT) / nrow(DF_Year))
 
 ## Make yearly dataframes to support 'Top3' charting
 
@@ -1205,6 +1209,22 @@ PLOT_CCMODCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-MOD
 rm(DF_Plot)
 PLOT_CCMODCost
 
+### Chart COR+MOD Total Cost per Year by ClassCat
+DF_Plot = DF_ClassCat[order(DF_ClassCat$CORMOD.TotalCostPerYr, decreasing=TRUE),]
+#### plot
+PLOT_CCTotalCORMODCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-CORMOD.TotalCostPerYr), y=CORMOD.TotalCostPerYr)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA), labels=scales::dollar_format()) +
+  labs(title="Average Annual Total COR+MOD Cost by Class-Category") +
+  xlab("Class-Category") +
+  ylab("Cost / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
+rm(DF_Plot)
+PLOT_CCTotalCORMODCost
+
 ### Chart PM count by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$PM.Count, decreasing=TRUE),]
 DF_Plot <- transform(DF_Plot, PM.Count = (PM.Count/nrow(DF_Year)))
@@ -1403,6 +1423,22 @@ PLOT_CCCALCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-CAL
 rm(DF_Plot)
 PLOT_CCCALCost
 
+### Chart PM+CAL Total Cost per Year by ClassCat
+DF_Plot = DF_ClassCat[order(DF_ClassCat$PMCAL.TotalCostPerYr, decreasing=TRUE),]
+#### plot
+PLOT_CCTotalPMCALCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-PMCAL.TotalCostPerYr), y=PMCAL.TotalCostPerYr)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA), labels=scales::dollar_format()) +
+  labs(title="Average Annual Total PM+CAL Cost by Class-Category") +
+  xlab("Class-Category") +
+  ylab("Cost / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
+rm(DF_Plot)
+PLOT_CCTotalPMCALCost
+
 ### Chart FAIL count by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$FAIL.Count, decreasing=TRUE),]
 DF_Plot <- transform(DF_Plot, FAIL.Count = (FAIL.Count/nrow(DF_Year)))
@@ -1505,6 +1541,22 @@ PLOT_CCFAILCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-FA
   theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
 rm(DF_Plot)
 PLOT_CCFAILCost
+
+### Chart total FAIL Cost per Year by ClassCat
+DF_Plot = DF_ClassCat[order(DF_ClassCat$FAIL.TotalCostPerYr, decreasing=TRUE),]
+#### plot
+PLOT_CCTotalFAILCost <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-FAIL.TotalCostPerYr), y=FAIL.TotalCostPerYr)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA), labels=scales::dollar_format()) +
+  labs(title="Average Annual Total FAIL Cost by Class-Category") +
+  xlab("Class-Category") +
+  ylab("Cost / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
+rm(DF_Plot)
+PLOT_CCTotalFAILCost
 
 ### Chart Urgent COR count by EAMS ID
 DF_Plot = DF_Equip[order(DF_Equip$Urgent.Count, decreasing=TRUE),]
@@ -1886,6 +1938,22 @@ PLOT_CCDowntime <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-WO
 rm(DF_Plot)
 PLOT_CCDowntime
 
+### Chart total Downtime Hours per Year by ClassCat
+DF_Plot = DF_ClassCat[order(DF_ClassCat$WO.TotalDTPerYr, decreasing=TRUE),]
+#### plot
+PLOT_CCTotalDTHours <- ggplot(data=head(DF_Plot,20), aes(x=reorder(ClassCategory,-WO.TotalDTPerYr), y=WO.TotalDTPerYr)) +
+  geom_bar(stat="identity", fill="chartreuse4") +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
+  labs(title="Average Annual Total Downtime Hours by Class-Category") +
+  xlab("Class-Category") +
+  ylab("Hours / Year") +
+  theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1)) +
+  theme(plot.title = element_text(color="darkslategray", size=14, face="bold")) +
+  theme(axis.title.x = element_text(color="darkslategray", size=12, face="bold")) +
+  theme(axis.title.y = element_text(color="darkslategray", size=12, face="bold")) 
+rm(DF_Plot)
+PLOT_CCTotalDTHours
+
 
 ## Failure Coding
 
@@ -2050,7 +2118,7 @@ PLOT_TOP3Equip_FAIL <- ggplot(data=DF_Plot, aes(x=Complete.Year, y=sum, color=Ob
   geom_line(linewidth=1.5) +
   scale_color_manual(values=c('chartreuse4', 'firebrick4', 'darkblue')) +
   scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
-  labs(title="Corrective WO Count by Year for Top 3 EAMS IDs") +
+  labs(title="Failure WO Count by Year for Top 3 EAMS IDs") +
   xlab("Year") +
   ylab("Count") +
   guides(color = guide_legend(reverse=T)) +
@@ -2073,7 +2141,7 @@ PLOT_TOP3ClassCat_FAIL <- ggplot(data=DF_Plot, aes(x=Complete.Year, y=avg, color
   geom_line(linewidth=1.5) +
   scale_color_manual(values=c('chartreuse4', 'firebrick4', 'darkblue')) +
   scale_y_continuous(expand = expansion(mult = c(0, .05)), limits = c(0, NA)) +
-  labs(title="Corrective WO Count per Equip by Year for Top 3 Class-Categories") +
+  labs(title="Failure WO Count per Equip by Year for Top 3 Class-Categories") +
   xlab("Year") +
   ylab("Count") +
   guides(color = guide_legend(reverse=T))
@@ -2210,11 +2278,21 @@ if (FLAG_save) {
   insertPlot(wb, "PLOT_WO", startRow=125, startCol = 10)
   print(PLOT_CCWOCost)
   insertPlot(wb, "PLOT_WO", startRow=125, startCol = 18)
+  print(PLOT_CCTotalCORMODCost)
+  insertPlot(wb, "PLOT_WO", startRow=145, startCol = 2)
+  print(PLOT_CCTotalPMCALCost)
+  insertPlot(wb, "PLOT_WO", startRow=145, startCol = 10)
+  print(PLOT_CCTotalFAILCost)
+  insertPlot(wb, "PLOT_WO", startRow=145, startCol = 18) 
+  print(PLOT_CCTotalDTHours)
+  insertPlot(wb, "PLOT_WO", startRow=145, startCol = 26) 
   
   addWorksheet(wb, "PLOT_COR")
   print(PLOT_CORTrend)
   insertPlot(wb, "PLOT_COR", startRow=5, startCol = 2)
-  print(PLOT_EQCORCount)
+  print(PLOT_CCTotalCORMODCost)
+  insertPlot(wb, "PLOT_COR", startRow=5, startCol = 10)
+  print(PLOT_EQCORCount)  
   insertPlot(wb, "PLOT_COR", startRow=25, startCol = 2)
   print(PLOT_EQCORHours)
   insertPlot(wb, "PLOT_COR", startRow=25, startCol = 10)
@@ -2230,6 +2308,8 @@ if (FLAG_save) {
   addWorksheet(wb, "PLOT_MOD")
   print(PLOT_MODTrend)
   insertPlot(wb, "PLOT_MOD", startRow=5, startCol = 2)
+  print(PLOT_CCTotalCORMODCost)
+  insertPlot(wb, "PLOT_MOD", startRow=5, startCol = 10)
   print(PLOT_EQMODCount)
   insertPlot(wb, "PLOT_MOD", startRow=25, startCol = 2)
   print(PLOT_EQMODHours)
@@ -2246,6 +2326,8 @@ if (FLAG_save) {
   addWorksheet(wb, "PLOT_PM")
   print(PLOT_PMTrend)
   insertPlot(wb, "PLOT_PM", startRow=5, startCol = 2)
+  print(PLOT_CCTotalPMCALCost)
+  insertPlot(wb, "PLOT_PM", startRow=5, startCol = 10)
   print(PLOT_EQPMCount)
   insertPlot(wb, "PLOT_PM", startRow=25, startCol = 2)
   print(PLOT_EQPMHours)
@@ -2262,6 +2344,8 @@ if (FLAG_save) {
   addWorksheet(wb, "PLOT_CAL")
   print(PLOT_CALTrend)
   insertPlot(wb, "PLOT_CAL", startRow=5, startCol = 2)
+  print(PLOT_CCTotalPMCALCost)
+  insertPlot(wb, "PLOT_CAL", startRow=5, startCol = 10)
   print(PLOT_EQCALCount)
   insertPlot(wb, "PLOT_CAL", startRow=25, startCol = 2)
   print(PLOT_EQCALHours)
@@ -2278,6 +2362,8 @@ if (FLAG_save) {
   addWorksheet(wb, "PLOT_FAIL")
   print(PLOT_FAILTrend)
   insertPlot(wb, "PLOT_FAIL", startRow=5, startCol = 2)
+  print(PLOT_CCTotalFAILCost)
+  insertPlot(wb, "PLOT_CAL", startRow=5, startCol = 10)
   print(PLOT_EQFAILCount)
   insertPlot(wb, "PLOT_FAIL", startRow=25, startCol = 2)
   print(PLOT_EQFAILHours)
@@ -2308,6 +2394,8 @@ if (FLAG_save) {
   insertPlot(wb, "PLOT_FAIL_DEEP", startRow=45, startCol = 10)
   print(PLOT_CCDowntime)
   insertPlot(wb, "PLOT_FAIL_DEEP", startRow=45, startCol = 18)
+  print(PLOT_CCTotalDTHours)
+  insertPlot(wb, "PLOT_FAIL_DEEP", startRow=45, startCol = 26)  
   print(PLOT_URGENTTrend)
   insertPlot(wb, "PLOT_FAIL_DEEP", startRow=65, startCol = 2)
   print(PLOT_EQUrgentCount)
